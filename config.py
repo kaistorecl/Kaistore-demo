@@ -1,9 +1,20 @@
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
 import os
-from pydantic import BaseModel
 
-class Settings(BaseModel):
-    CURRENCY: str = os.getenv("CURRENCY", "CLP")
-    LOCALE: str = os.getenv("LOCALE", "es-CL")
-    STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")  # puede estar vacío en local/test
+# Si no hay DATABASE_URL (Postgres), usa SQLite en /var/tmp (escribible en Render)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////var/tmp/kaistore.db")
 
-settings = Settings()
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+class Base(DeclarativeBase):
+    pass
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
