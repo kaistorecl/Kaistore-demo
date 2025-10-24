@@ -1,13 +1,18 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from .config import settings
+import os
 
-engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {})
+# Usa Postgres si defines DATABASE_URL. Si no, usa SQLite en /var/tmp (ruta escribible en Render)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////var/tmp/kaistore.db")
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 class Base(DeclarativeBase):
     pass
 
+# Dependency para FastAPI (si la usas en routers)
 def get_db():
     db = SessionLocal()
     try:
