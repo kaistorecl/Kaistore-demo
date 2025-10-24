@@ -60,11 +60,12 @@ def checkout(payload: dict, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(order)  # ahora tenemos order.id
     # === /Crear orden en DB ===
-    session = stripe.checkout.Session.create(
-        mode="payment",
-      success_url=f"{BASE_URL}/success.html?session_id={{CHECKOUT_SESSION_ID}}",
-cancel_url=f"{BASE_URL}/cancel.html",
-        customer_email=email,
-        line_items=line_items
-    )
+        session = stripe.checkout.Session.create(
+    mode="payment",
+    success_url=f"{BASE_URL}/success.html?session_id={{CHECKOUT_SESSION_ID}}",
+    cancel_url=f"{BASE_URL}/cancel.html",
+    customer_email=email,
+    line_items=line_items,
+    metadata={"order_id": str(order.id)}   # 👈 Aquí se agrega
+        )
     return {"checkout_url": session.url}
