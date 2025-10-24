@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: kaistore-single
+    env: docker
+    plan: free
+    dockerfilePath: Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: STRIPE_SECRET_KEY
+        value: "sk_test_xxx"
+      - key: STRIPE_WEBHOOK_SECRET
+        value: "whsec_xxx"
+      - key: CURRENCY
+        value: "CLP"
+      - key: LOCALE
+        value: "es-CL"
