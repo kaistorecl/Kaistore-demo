@@ -11,8 +11,9 @@ from config import settings
 
 app = FastAPI(title="Kaistore API + Front")
 
-# DB
-Base.metadata.create_all(bind=engine)
+@app.on_event("startup")
+def on_startup():
+    Base.metadata.create_all(bind=engine)
 
 # Routers API
 app.include_router(products.router)
