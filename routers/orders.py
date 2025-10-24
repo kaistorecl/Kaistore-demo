@@ -3,7 +3,7 @@ import stripe
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from db import SessionLocal
-from models import Product
+from models import Product, Order, OrderItem
 from config import settings
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -39,7 +39,27 @@ def checkout(payload: dict, db: Session = Depends(get_db)):
             },
             "quantity": qty
         })
+# === Crear orden en DB con sus ítems ===
+    order = Order(
+        status="CREATED",
+        total=0.0,
+        currency=settings.CURRENCY,
+        customer_email=email,
+        items=[]
+    )
 
+    for it in items:
+        p = db.query(Product).get(it.get("product_id"))
+        if not p:
+            raise HTTPException(status_code=404, detail=f"Product {it.get('product_id')} not found")
+        qty = int(it.get("qty", 1))
+        order.items.append(OrderItem(product_id=p.id, qty=qty, unit_price=p.price))
+        order.total += p.price * qty
+
+    db.add(order)
+    db.commit()
+    db.refresh(order)  # ahora tenemos order.id
+    # === /Crear orden en DB ===
     session = stripe.checkout.Session.create(
         mode="payment",
       success_url=f"{BASE_URL}/success.html?session_id={{CHECKOUT_SESSION_ID}}",
