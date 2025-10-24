@@ -1,3 +1,4 @@
+import os
 import stripe
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from config import settings
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
+BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://kaistore-demo.onrender.com")
 
 def get_db():
     db = SessionLocal()
@@ -40,8 +42,8 @@ def checkout(payload: dict, db: Session = Depends(get_db)):
 
     session = stripe.checkout.Session.create(
         mode="payment",
-        success_url="https://example.com/success",
-        cancel_url="https://example.com/cancel",
+      success_url=f"{BASE_URL}/success.html?session_id={{CHECKOUT_SESSION_ID}}",
+cancel_url=f"{BASE_URL}/cancel.html",
         customer_email=email,
         line_items=line_items
     )
