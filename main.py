@@ -2,12 +2,12 @@ import asyncio, os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from .db import Base, engine, SessionLocal
-from .models import *  # noqa
-from .routers import products, orders, payments
-from .schemas import ProductIn
-from .services.publishing import publish_product
-from .config import settings
+from db import Base, engine, SessionLocal
+from models import *  # noqa
+from routers import products, orders, payments
+from schemas import ProductIn
+from publishing import publish_product
+from config import settings
 
 app = FastAPI(title="Kaistore API + Front")
 
