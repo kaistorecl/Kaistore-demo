@@ -1,7 +1,7 @@
 from slugify import slugify
 from sqlalchemy.orm import Session
-from ..models import Product
-from ..schemas import ProductIn
+from models import Product
+from schemas import ProductIn
 
 def publish_product(db: Session, payload: ProductIn) -> Product:
     slug = slugify(payload.title)
