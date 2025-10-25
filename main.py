@@ -1,5 +1,6 @@
 import asyncio, os
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from db import Base, engine, SessionLocal
@@ -73,3 +74,29 @@ async def auto_publisher():
 @app.on_event("startup")
 async def on_startup():
     asyncio.create_task(auto_publisher())
+# Rutas de confirmación de pago
+@app.get("/success", response_class=HTMLResponse)
+async def success():
+    return """
+    <html>
+    <head><title>Pago completado</title></head>
+    <body style="font-family: sans-serif; background:#111; color:#eee; padding:2rem">
+      <h1>✅ ¡Pago completado con éxito!</h1>
+      <p>Gracias por tu compra.</p>
+      <p><a href="/" style="color:#4ade80">Volver a la tienda</a></p>
+    </body>
+    </html>
+    """
+
+@app.get("/cancel", response_class=HTMLResponse)
+async def cancel():
+    return """
+    <html>
+    <head><title>Pago cancelado</title></head>
+    <body style="font-family: sans-serif; background:#111; color:#eee; padding:2rem">
+      <h1>⚠️ Pago cancelado</h1>
+      <p>Tu sesión de pago fue cancelada o expiró.</p>
+      <p><a href="/" style="color:#60a5fa">Volver a la tienda</a></p>
+    </body>
+    </html>
+    """
