@@ -20,7 +20,7 @@ async def stripe_webhook(request: Request):
     - Si STRIPE_WEBHOOK_SECRET está definido, verificamos la firma (recomendado).
     - Si no está definido, hacemos parse del JSON (sólo útil para desarrollo).
     """
-    payload = await request.body()
+    payload = (await request.body()).decode("utf-8")  # <- usar string, no bytes
 
     if WEBHOOK_SECRET:
         sig_header = request.headers.get("stripe-signature")
