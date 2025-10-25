@@ -34,3 +34,18 @@ class OrderItem(Base):
     qty: Mapped[int] = mapped_column(Integer, default=1)
     unit_price: Mapped[float] = mapped_column(Float, default=0.0)
     order: Mapped[Order] = relationship("Order", back_populates="items")
+    
+# --- NUEVO: modelo simple para registrar sesiones de Checkout ---
+from datetime import datetime
+from sqlalchemy import Column, String, Integer, DateTime
+
+class CheckoutSession(Base):
+    __tablename__ = "checkout_sessions"
+
+    # id de la sesión de Stripe (ej: cs_test_123)
+    id = Column(String, primary_key=True)
+    amount_total = Column(Integer, default=0)      # en centavos
+    currency = Column(String(10), default="CLP")
+    customer_email = Column(String(255), nullable=True)
+    status = Column(String(50), default="CREATED")
+    created_at = Column(DateTime, default=datetime.utcnow)
