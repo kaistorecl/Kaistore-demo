@@ -1,79 +1,46 @@
-import os
-import stripe
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-
-from db import SessionLocal
-from models import Product, Order, OrderItem
+from pydantic import BaseModel
+import stripe
+import os
 from config import settings
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
-BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://kaistore-demo.onrender.com")
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY", settings.STRIPE_SECRET_KEY)
 
+WEB_URL = os.getenv("WEB_URL", "https://kaistore-demo.onrender.com")  # ajuste si tu URL es distinta
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+class CheckoutItem(BaseModel):
+    title: str
+    price: float    # en la moneda indicada (CLP para esta demo)
+    quantity: int = 1
+    currency: str = "CLP"
 
+class CheckoutRequest(BaseModel):
+    items: list[CheckoutItem]
 
 @router.post("/checkout")
-def checkout(payload: dict, db: Session = Depends(get_db)):
-    items = payload.get("items", [])
-    email = payload.get("customer_email")
+async def create_checkout(req: CheckoutRequest):
+    try:
+        line_items = [
+            {
+                "price_data": {
+                    "currency": item.currency.lower(),
+                    "product_data": {"name": item.title},
+                    "unit_amount": int(item.price),  # CLP sin centavos
+                },
+                "quantity": item.quantity,
+            } for item in req.items
+        ]
 
-    if not items or not email:
-        raise HTTPException(status_code=400, detail="items and customer_email required")
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="payment",
+            line_items=line_items,
+            success_url=f"{WEB_URL}/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{WEB_URL}/cancel",
+        )
 
-    # === Line items para Stripe ===
-    line_items = []
-    for it in items:
-        p = db.query(Product).get(it.get("product_id"))
-        if not p:
-            raise HTTPException(status_code=404, detail=f"Product {it.get('product_id')} not found")
-        qty = int(it.get("qty", 1))
-        line_items.append({
-            "price_data": {
-                "currency": settings.CURRENCY.lower(),  # CLP en minúsculas
-                "product_data": {"name": p.title},
-                "unit_amount": int(p.price),
-            },
-            "quantity": qty,
-        })
-
-    # === Crear la orden en DB con sus ítems ===
-    order = Order(
-        status="CREATED",
-        total=0.0,
-        currency=settings.CURRENCY,
-        customer_email=email,
-        items=[]
-    )
-
-    for it in items:
-        p = db.query(Product).get(it.get("product_id"))
-        if not p:
-            raise HTTPException(status_code=404, detail=f"Product {it.get('product_id')} not found")
-        qty = int(it.get("qty", 1))
-        order.items.append(OrderItem(product_id=p.id, qty=qty, unit_price=p.price))
-        order.total += p.price * qty
-
-    db.add(order)
-    db.commit()
-    db.refresh(order)  # ahora order.id está disponible
-
-    # === Crear sesión de checkout de Stripe ===
-    session = stripe.checkout.Session.create(
-        mode="payment",
-        success_url=f"{BASE_URL}/success.html?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{BASE_URL}/cancel.html",
-        customer_email=email,
-        line_items=line_items,
-        metadata={"order_id": str(order.id)},  # <-- importante para el webhook
-    )
-
-    return {"checkout_url": session.url}
+        return {"url": session.url, "id": session.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
