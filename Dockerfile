@@ -12,5 +12,5 @@ COPY . /app
 ENV PORT=10000
 EXPOSE 10000
 
-# Inicia FastAPI (main.py está en la raíz del repo)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
+# Inicia FastAPI usando el puerto que provee Render
+CMD bash -c 'uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000}'
