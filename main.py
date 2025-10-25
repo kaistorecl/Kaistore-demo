@@ -38,15 +38,42 @@ async def health():
 async def success():
     return """
 <html>
-  <head><title>Pago completado</title></head>
-  <body style="font-family: sans-serif; background:#111; color:#eee; padding:2rem">
-    <h1>✅ ¡Pago completado con éxito!</h1>
-    <p>Gracias por tu compra.</p>
-    <p><a href="/" style="color:#4ade80">Volver a la tienda</a></p>
-  </body>
-</html>
-"""  # noqa: E501
+<head><title>Pago completado</title></head>
+<body style="font-family: sans-serif; background:#111; color:#eee; padding:2rem">
+  <h1>✅ ¡Pago completado con éxito!</h1>
+  <p>Gracias por tu compra.</p>
+  <p id="details" style="margin-top:1rem; font-size:1.05rem;">Consultando detalles de tu pago...</p>
+  <p style="margin-top:2rem"><a href="/" style="color:#4ade80">Volver a la tienda</a></p>
 
+  <script>
+    (async function() {
+      const params = new URLSearchParams(location.search);
+      const sid = params.get("session_id");
+      if (!sid) {
+        document.getElementById("details").textContent = "No se encontró session_id en la URL.";
+        return;
+      }
+      try {
+        const res = await fetch(`/api/payments/session/${sid}`);
+        if (!res.ok) {
+          document.getElementById("details").textContent = "No pudimos recuperar los detalles del pago.";
+          return;
+        }
+        const data = await res.json();
+        const monto = (data.amount_total || 0) / 100;
+        const moneda = (data.currency || "CLP").toUpperCase();
+        const email = data.customer_email || "cliente";
+        const estado = data.status || "DESCONOCIDO";
+        document.getElementById("details").textContent =
+          `Recibimos ${monto} ${moneda} de ${email}. Estado: ${estado}. (ID: ${data.id})`;
+      } catch (e) {
+        document.getElementById("details").textContent = "Error consultando detalles.";
+      }
+    })();
+  </script>
+</body>
+</html>
+"""
 
 @app.get("/cancel", response_class=HTMLResponse)
 async def cancel():
