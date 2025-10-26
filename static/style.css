@@ -86,4 +86,5 @@ a:focus-visible, button:focus-visible, input:focus-visible{
   box-shadow: 0 6px 24px rgba(0,0,0,.45);
 }
 .toast.show{display:block; animation: pop .2s ease}
-@keyframes pop{ from{ transform:scale(.95); opacity:.6 } to{ transform:scale(1); opacity:1 } }
+@keyframes pop{ from{ transform:scale(.95); opacity:.6 } to{ transform:scale(1); opacity:1 }
+}
