@@ -1,39 +1,73 @@
+# routers/payments.py
 import os
 import json
 import stripe
 from fastapi import APIRouter, Request, HTTPException
-from sqlalchemy.orm import Session
-
 from config import settings
-from db import SessionLocal
-from models import CheckoutSession
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
-# API key de Stripe (modo prueba)
+# Clave secreta de Stripe (modo prueba)
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
-# Clave de firma del webhook (configurada en Stripe → Workbench → Webhooks)
+# (Opcional) Secreto de firma del webhook: ponlo en Render como STRIPE_WEBHOOK_SECRET
 WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
-
-def get_db():
-    db = SessionLocal()
+@router.get("/session/{session_id}")
+def get_session_details(session_id: str):
+    """
+    Devuelve detalles de la sesión de Checkout para mostrar en /success
+    """
     try:
-        yield db
-    finally:
-        db.close()
+        # expand line_items para obtener info de los productos si quieres
+        session = stripe.checkout.Session.retrieve(
+            session_id,
+            expand=["line_items", "payment_intent"]
+        )
 
+        # Campos útiles para el front
+        data = {
+            "id": session.id,
+            "status": session.status,
+            "amount_total": session.amount_total,   # centavos
+            "currency": (session.currency or "").upper(),
+            "customer_email": session.get("customer_details", {}).get("email"),
+        }
+
+        # (Opcional) algunos extras
+        if session.line_items and session.line_items.data:
+            items = []
+            for li in session.line_items.data:
+                items.append({
+                    "description": li.description,
+                    "quantity": li.quantity,
+                    "amount_subtotal": li.amount_subtotal,
+                    "amount_total": li.amount_total,
+                    "currency": (li.currency or "").upper(),
+                })
+            data["items"] = items
+
+        if session.payment_intent:
+            pi = session.payment_intent
+            data["payment_intent_status"] = getattr(pi, "status", None)
+
+        return data
+
+    except stripe.error.InvalidRequestError as e:
+        # por ejemplo: ID no existe o es inválido
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error consultando sesión de pago")
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
     """
-    Webhook de Stripe.
-    - Si STRIPE_WEBHOOK_SECRET está definido, verificamos la firma (recomendado).
-    - Si no, parseamos el JSON (útil en desarrollo).
+    Webhook de Stripe (opcional pero recomendable).
+    Si configuras STRIPE_WEBHOOK_SECRET, verificamos la firma.
     """
     payload = await request.body()
 
+    # Verificación de firma si hay secreto configurado
     if WEBHOOK_SECRET:
         sig_header = request.headers.get("stripe-signature")
         try:
@@ -43,86 +77,24 @@ async def stripe_webhook(request: Request):
         except stripe.error.SignatureVerificationError:
             raise HTTPException(status_code=400, detail="Invalid signature")
     else:
-        # fallback sin firma (dev)
+        # Fallback para desarrollo sin verificar firma
         try:
             event = json.loads(payload.decode("utf-8"))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # Normalizamos para acceder a tipo y objeto
+    # Manejo básico
     if isinstance(event, dict):
         event_type = event.get("type")
-        obj = event.get("data", {}).get("object", {}) or {}
+        obj = event.get("data", {}).get("object", {})
     else:
         event_type = event.type
         obj = event.data.object
 
-    session_id = obj.get("id")
+    if event_type == "checkout.session.completed":
+        # Aquí podrías actualizar tu DB con el estado de la orden
+        print("✅ checkout.session.completed:", getattr(obj, "id", obj.get("id")))
+    else:
+        print("ℹ️ Evento:", event_type)
 
-    # Abrimos DB
-    db: Session = SessionLocal()
-
-    try:
-        if event_type == "checkout.session.completed":
-            cs = db.get(CheckoutSession, session_id) if session_id else None
-            if not cs and session_id:
-                cs = CheckoutSession(id=session_id)
-
-            # Campos útiles
-            amount_total = obj.get("amount_total") or 0
-            currency = obj.get("currency") or settings.CURRENCY
-            email = (obj.get("customer_details") or {}).get("email") or obj.get("customer_email")
-
-            if not cs and session_id:
-                cs = CheckoutSession(
-                    id=session_id,
-                    amount_total=amount_total,
-                    currency=currency,
-                    customer_email=email,
-                    status="PAID",
-                )
-                db.add(cs)
-            else:
-                # upsert / update
-                if cs:
-                    cs.amount_total = amount_total
-                    cs.currency = currency
-                    cs.customer_email = email
-                    cs.status = "PAID"
-
-            db.commit()
-            return {"received": True, "session": session_id, "status": "PAID"}
-
-        elif event_type in ("checkout.session.expired",):
-            if session_id:
-                cs = db.get(CheckoutSession, session_id)
-                if cs:
-                    cs.status = "EXPIRED"
-                    db.commit()
-            return {"received": True, "session": session_id, "status": "EXPIRED"}
-
-        else:
-            # otros eventos: marcamos recibido
-            return {"received": True, "event_type": event_type, "session": session_id}
-    finally:
-        db.close()
-
-
-@router.get("/session/{session_id}")
-def get_session(session_id: str):
-    """Consultar detalles guardados de una sesión de Checkout."""
-    db: Session = SessionLocal()
-    try:
-        cs = db.get(CheckoutSession, session_id)
-        if not cs:
-            raise HTTPException(status_code=404, detail="Session not found")
-        return {
-            "id": cs.id,
-            "amount_total": cs.amount_total,
-            "currency": cs.currency,
-            "customer_email": cs.customer_email,
-            "status": cs.status,
-            "created_at": cs.created_at.isoformat(),
-        }
-    finally:
-        db.close()
+    return {"received": True}
