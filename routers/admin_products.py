@@ -11,6 +11,7 @@ from db import (
     get_draft_products,
     publish_product,
     create_demo_draft,
+    get_all_products,
 )
 
 router = APIRouter(
@@ -18,11 +19,10 @@ router = APIRouter(
     tags=["admin-products"],
 )
 
-# ==========
-# AUTH SIMPLE
-# ==========
-# Render: crea una variable de entorno ADMIN_SECRET
-# (Settings -> Environment -> env var)
+# =========================================================
+# Auth super simple vía query param ?secret=...
+# En Render puedes setear ADMIN_SECRET como env var
+# =========================================================
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "CAMBIA_ESTO_POR_UN_TOKEN_LARGO")
 
 
@@ -31,9 +31,39 @@ def require_secret(secret: str):
         raise HTTPException(status_code=403, detail="No autorizado")
 
 
-# =====================
+# =========================================================
+# 0. DEBUG TOTAL (nuevo)
+# =========================================================
+@router.get("/debug_all")
+def debug_all(
+    secret: str = Query(..., description="Admin token"),
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """
+    DEVUELVE TODO lo que hay en la tabla products SIN FILTRO.
+    Esto es solo para diagnosticar por qué /drafts y /published
+    están devolviendo [].
+    """
+    require_secret(secret)
+
+    rows = get_all_products(db)
+    return [
+        {
+            "id": p.id,
+            "title": p.title,
+            "status": p.status,
+            "price": p.price,
+            "currency": p.currency,
+            "score": p.score,
+            "source_label": p.source_label,
+        }
+        for p in rows
+    ]
+
+
+# =========================================================
 # 1. Crear draft DEMO
-# =====================
+# =========================================================
 @router.get("/seed_demo")
 def seed_demo(
     secret: str = Query(..., description="Admin token"),
@@ -41,7 +71,7 @@ def seed_demo(
 ) -> Dict[str, Any]:
     """
     Inserta un producto de prueba en estado 'draft'.
-    Esto simula lo que luego hará la IA.
+    Simula lo que haría la IA.
     """
     require_secret(secret)
 
@@ -53,17 +83,16 @@ def seed_demo(
     }
 
 
-# =====================
+# =========================================================
 # 2. Ver todos los draft
-# =====================
+# =========================================================
 @router.get("/drafts")
 def list_drafts(
     secret: str = Query(..., description="Admin token"),
     db: Session = Depends(get_db),
 ) -> List[Dict[str, Any]]:
     """
-    Devuelve los productos que están en 'draft'.
-    Esto es lo que vas a mostrar en /dashboard para decidir qué publicar.
+    Devuelve solo los productos con estado 'draft'.
     """
     require_secret(secret)
 
@@ -82,9 +111,9 @@ def list_drafts(
     ]
 
 
-# =====================
-# 3. Publicar un producto
-# =====================
+# =========================================================
+# 3. Publicar (draft -> published)
+# =========================================================
 @router.patch("/products/{product_id}/publish")
 def publish_product_endpoint(
     product_id: int,
@@ -94,7 +123,6 @@ def publish_product_endpoint(
 ) -> Dict[str, Any]:
     """
     Cambia un producto a 'published' y actualiza su precio.
-    Esto es lo que hará el botón 'Publicar' en tu panel.
     """
     require_secret(secret)
 
