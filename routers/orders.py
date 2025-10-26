@@ -111,8 +111,10 @@ def checkout(payload: CheckoutIn, request: Request):
             cancel_url=cancel_url,
         )
 
-        return {"url": session.url, "id": session.id}
-
+return {
+    "checkout_url": session.url,  # <- lo que espera el front
+    "id": session.id,
+    "url": session.url            # lo dejamos también por compatibilidad futura
     except HTTPException:
         # Remezclamos las HTTPException tal cual (422/400, etc.)
         raise
