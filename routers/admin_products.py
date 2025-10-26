@@ -2,34 +2,30 @@
 
 import os
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
 from db import get_db, get_draft_products, publish_product
-from models import Product
+from models import Product  # <-- importante: necesitamos crear drafts
 
 router = APIRouter(
     prefix="/api/admin",
     tags=["admin-products"]
 )
 
-# =========================================
-# Auth simple con token secreto
-# =========================================
-# Puedes setear ADMIN_SECRET como variable de entorno en Render.
-# Si no está seteado, usa el fallback "CAMBIA_ESTO_POR_UN_TOKEN_LARGO".
+# Leemos el secreto desde variable de entorno si existe (Render),
+# y si no, usamos un fallback por defecto.
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "CAMBIA_ESTO_POR_UN_TOKEN_LARGO")
 
 
 def _check_secret(secret: str):
     if secret != ADMIN_SECRET:
+        # mismo comportamiento en todos los endpoints admin
         raise HTTPException(status_code=403, detail="No autorizado")
 
 
-# =========================================
-# 1) Lista los productos en estado draft
-# =========================================
 @router.get("/drafts")
 def list_drafts(
     secret: str = Query(..., description="Admin token"),
@@ -56,9 +52,6 @@ def list_drafts(
     ]
 
 
-# =========================================
-# 2) Publicar un draft -> published
-# =========================================
 @router.patch("/products/{product_id}/publish")
 def publish_product_endpoint(
     product_id: int,
@@ -84,46 +77,35 @@ def publish_product_endpoint(
     }
 
 
-# =========================================
-# 3) NUEVO: seed_demo
-#    Crea 1 producto en estado "draft" en la BD,
-#    para que luego puedas aprobarlo/publicarlo.
-# =========================================
-@router.post("/seed_demo")
+@router.get("/seed_demo")
 def seed_demo(
     secret: str = Query(..., description="Admin token"),
     db: Session = Depends(get_db),
 ):
     """
-    Inserta un producto DEMO en estado 'draft' directamente en la base.
-    Úsalo solo una vez para poblar tu tienda la primera vez.
-    Luego podrás verlo en /api/admin/drafts y publicarlo.
+    Crea 1 producto demo en estado 'draft'.
+    Sirve para probar el flujo completo:
+      draft -> /drafts -> /publish -> aparece en vitrina pública.
     """
+
     _check_secret(secret)
 
     demo = Product(
-        # estado inicial
-        status="draft",
-
-        # texto de marketing
         title="Corrector cervical portátil",
-        slug="corrector-cervical-portatil",
+        slug="corrector-cervical-portatil",  # tiene unique=True, así que no repitas 1.000 veces
+        status="draft",
         marketing_title="Menos dolor de cuello en 15 minutos frente al PC",
         description_long=(
             "¿Terminas el día con el cuello duro y tensión en la zona cervical? "
             "Este soporte ajustable te ayuda a mantener una postura más cómoda "
             "mientras trabajas o descansas, sin pastillas ni cremas."
         ),
-
-        # bullets de venta (guardados como string JSON)
         bullets_json=json.dumps([
             "Reduce tensión cervical después de horas frente al PC",
             "Úsalo sentado mientras trabajas",
             "Sin pastillas ni cremas",
             "Ajustable y cómodo"
         ]),
-
-        # FAQ (también string JSON)
         faq_json=json.dumps([
             {
                 "q": "¿Duele usarlo?",
@@ -138,22 +120,14 @@ def seed_demo(
                 "a": "Promedio 2-4 días hábiles según tu zona."
             }
         ]),
-
-        # nota de advertencia
         risk_note="No apretar demasiado. No usar mientras duermes.",
-
-        # imágenes
-        image_url="https://via.placeholder.com/400x400?text=Corrector+Cervical",
+        image_url="https://via.placeholder.com/400x400?text=Producto",
         image_urls_json=json.dumps([
-            "https://via.placeholder.com/400x400?text=Corrector+Cervical",
-            "https://via.placeholder.com/400x400?text=Vista+Lateral"
+            "https://via.placeholder.com/400x400?text=Producto",
+            "https://via.placeholder.com/400x400?text=Vista+lateral"
         ]),
-
-        # precios base inicial (lo podemos ajustar al publicar)
         price=12990,
         currency="CLP",
-
-        # meta interna
         score=90,
         active=True,
         supplier_sku="cx-neck-relief-v1",
@@ -166,6 +140,6 @@ def seed_demo(
 
     return {
         "status": "ok",
-        "message": "Producto demo creado en draft",
+        "message": "Draft creado",
         "draft_id": demo.id,
     }
