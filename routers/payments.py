@@ -5,6 +5,9 @@ import stripe
 from fastapi import APIRouter, Request, HTTPException
 from config import settings
 
+from db import SessionLocal
+from models import Order
+
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 # Clave secreta de Stripe (modo prueba)
@@ -92,9 +95,53 @@ async def stripe_webhook(request: Request):
         obj = event.data.object
 
     if event_type == "checkout.session.completed":
-        # Aquí podrías actualizar tu DB con el estado de la orden
-        print("✅ checkout.session.completed:", getattr(obj, "id", obj.get("id")))
+    # Objeto de la sesión de checkout (dict)
+    session_obj = obj
+    sid = session_obj.get("id")
+
+    amount_total = session_obj.get("amount_total")  # entero en centavos (salvo monedas sin decimales)
+    currency = (session_obj.get("currency") or "").upper()
+    customer_email = (
+        (session_obj.get("customer_details") or {}).get("email")
+        or session_obj.get("customer_email")
+    )
+    status = session_obj.get("status") or "complete"
+
+    # Monedas sin decimales
+    ZERO_DEC = {
+        "BIF","CLP","DJF","GNF","JPY","KMF","KRW","MGA","PYG","RWF",
+        "UGX","VND","VUV","XAF","XOF","XPF"
+    }
+    if amount_total is not None:
+        amount_human = amount_total if currency in ZERO_DEC else (amount_total / 100.0)
     else:
-        print("ℹ️ Evento:", event_type)
+        amount_human = None
+
+    db = SessionLocal()
+    try:
+        # Buscar la orden que guardamos en /checkout por session_id
+        order = db.query(Order).filter(Order.session_id == sid).first()
+        if not order:
+            # Si no existe (caso raro), la creamos
+            order = Order(session_id=sid)
+            db.add(order)
+
+        order.status = status
+        order.email = customer_email
+        if currency:
+            order.currency = currency
+        if amount_human is not None:
+            order.amount = float(amount_human)
+
+        db.commit()
+        print(f"✅ Orden {order.id if order.id else '-'} actualizada a {order.status} (sid={sid})")
+    except Exception as e:
+        db.rollback()
+        print(f"⚠️ Error actualizando orden por webhook: {e}")
+        raise HTTPException(status_code=500, detail="Error actualizando orden")
+    finally:
+        db.close()
+else:
+    print("ℹ️ Evento recibido:", event_type)
 
     return {"received": True}
