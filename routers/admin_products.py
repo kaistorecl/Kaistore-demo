@@ -139,14 +139,14 @@ def auto_generate_endpoint(
 
     # Crear producto
     p = Product(
-        title_marketing=idea["title_marketing"],
-        short_bullets=idea["short_bullets"],
-        image_urls=idea["image_urls"],
-        price=idea["price"],
-        currency=idea["currency"],
-        status="draft",
-        source_label="ai_seed_v1",
-        score=idea.get("score", 0.85),
+    marketing_title=idea["title_marketing"],  # <-- nombre correcto en el modelo
+    short_bullets=idea["short_bullets"],
+    image_urls=idea["image_urls"],
+    price=idea["price"],
+    currency=idea["currency"],
+    status="draft",
+    source_label="ai_seed_v1",
+    score=idea.get("score", 0.85),
     )
 
     db.add(p)
