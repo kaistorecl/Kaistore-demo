@@ -60,7 +60,30 @@ async def success():
           return;
         }
         const data = await res.json();
-        const monto = (data.amount_total || 0) / 100;
+        // Algunas monedas no usan decimales (CLP, JPY, KRW, etc.)
+const zeroDecimal = new Set([
+  "BIF","CLP","DJF","GNF","JPY","KMF","KRW","MGA","PYG","RWF",
+  "UGX","VND","VUV","XAF","XOF","XPF"
+]);
+
+let amount = data.amount_total || 0;
+const curr = (data.currency || "CLP").toUpperCase();
+const isZero = zeroDecimal.has(curr);
+
+// Si no tiene decimales NO dividimos entre 100
+const monto = isZero ? amount : amount / 100;
+
+// Formato bonito
+const fmt = new Intl.NumberFormat("es-CL", {
+  style: "currency",
+  currency: curr,
+  minimumFractionDigits: isZero ? 0 : 2,
+  maximumFractionDigits: isZero ? 0 : 2
+});
+
+document.getElementById("details").textContent =
+  `Recibimos ${fmt.format(monto)} de ${email}. ` +
+  `Estado: ${estado}. (ID: ${data.id})`;
         const moneda = (data.currency || "CLP").toUpperCase();
         const email = data.customer_email || "cliente";
         const estado = data.status || "DESCONOCIDO";
