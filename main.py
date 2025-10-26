@@ -78,28 +78,47 @@ async function fetchProducts(){
 }
 
 function render(products){
+  if(!products || products.length === 0){
+    $grid.innerHTML = `
+      <div style="color:#aaa; text-align:center; padding:2rem;">
+        No hay productos disponibles por el momento.
+      </div>`;
+    return;
+  }
+
   const term = ($q.value || "").toLowerCase().trim();
   const list = term ? products.filter(p =>
-      p.title.toLowerCase().includes(term) || (p.description||"").toLowerCase().includes(term)
-    ) : products;
+    (p.title || "").toLowerCase().includes(term) ||
+    (p.description || "").toLowerCase().includes(term)
+  ) : products;
 
   $grid.innerHTML = list.map(p => `
-    <article class="card">
-      <img class="img" src="${p.image_url}" alt="${p.title}"/>
+    <article class="card" style="animation: fadein .4s ease;">
+<img class="img"
+     src="${p.image_url || 'https://via.placeholder.com/400x400?text=Sin+Imagen'}"
+     alt="${p.title || 'Producto'}"
+     onerror="this.src='https://via.placeholder.com/400x400?text=Sin+Imagen';"/>
       <div class="body">
         <div class="row">
-          <div class="badge">${(p.supplier_sku || "SKU")}</div>
+          <div class="badge">${p.supplier_sku || 'SKU'}</div>
           <div class="price">${CLP.format(p.price || 0)}</div>
         </div>
-        <div class="title">${p.title}</div>
-        <div class="desc">${p.description || ""}</div>
+        <div class="title">${p.title || ''}</div>
+        <div class="desc">${p.description || ''}</div>
         <div class="row">
-          <button class="btn" onclick='buy(${p.id})'>Comprar</button>
+          <button class="btn" onclick="buy(${p.id})">🛒 Comprar</button>
         </div>
       </div>
     </article>
   `).join("");
 }
+
+// animación suave
+const style = document.createElement("style");
+style.textContent = `
+@keyframes fadein { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+`;
+document.head.appendChild(style);
 
 async function buy(productId){
   try{
