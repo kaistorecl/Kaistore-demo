@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import List, Dict, Any
+import json
 
 from db import get_db, get_published_products, get_product_by_id
 
@@ -12,7 +14,7 @@ router = APIRouter(
 
 
 @router.get("/published")
-def list_published_products(db: Session = Depends(get_db)):
+def list_published_products(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     """
     Devuelve todos los productos publicados, en formato seguro
     para mostrar en la tienda (catálogo).
@@ -33,7 +35,7 @@ def list_published_products(db: Session = Depends(get_db)):
 
 
 @router.get("/{product_id}")
-def get_product_detail(product_id: int, db: Session = Depends(get_db)):
+def get_product_detail(product_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Devuelve el detalle completo de un producto publicado.
     Esto alimenta la página de producto individual.
@@ -58,8 +60,6 @@ def get_product_detail(product_id: int, db: Session = Depends(get_db)):
 # ------------------------
 # Helpers internos
 # ------------------------
-
-import json
 
 def _safe_json_list(raw: str, fallback_single: str = None):
     """
@@ -90,7 +90,6 @@ def _safe_json_faq(raw: str):
     try:
         data = json.loads(raw)
         if isinstance(data, list):
-            # saneamos estructura
             cleaned = []
             for item in data:
                 q = item.get("q") if isinstance(item, dict) else None
