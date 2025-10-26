@@ -12,26 +12,135 @@ from schemas import ProductIn
 from publishing import publish_product
 from config import settings
 
-
 app = FastAPI(title="Kaistore API + Front")
-
 
 # ----- DB init en startup -----
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
 
-
 # ----- Routers API -----
 app.include_router(products.router)
 app.include_router(orders.router)
 app.include_router(payments.router)
 
+@app.get("/", response_class=HTMLResponse)
+async def home():
+    return """
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Kaistore — Demo</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+  <header class="header">
+    <div class="container" style="display:flex; align-items:center;">
+      <div class="brand">
+        <span class="dot"></span>
+        <h1>Kaistore — Demo</h1>
+      </div>
+      <div class="controls">
+        <label class="search">
+          🔎
+          <input id="q" placeholder="Buscar productos…"/>
+        </label>
+      </div>
+    </div>
+  </header>
 
+  <main class="container">
+    <div id="grid" class="grid"></div>
+    <p class="footer">Sandbox • Pagos de prueba en Stripe</p>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+const $grid = document.getElementById("grid");
+const $q = document.getElementById("q");
+const $toast = document.getElementById("toast");
+
+const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" });
+
+function toast(msg){
+  $toast.textContent = msg;
+  $toast.classList.add("show");
+  setTimeout(()=> $toast.classList.remove("show"), 1800);
+}
+
+async function fetchProducts(){
+  const res = await fetch("/api/products");
+  if(!res.ok){ throw new Error("No se pudieron cargar productos"); }
+  return await res.json();
+}
+
+function render(products){
+  const term = ($q.value || "").toLowerCase().trim();
+  const list = term ? products.filter(p =>
+      p.title.toLowerCase().includes(term) || (p.description||"").toLowerCase().includes(term)
+    ) : products;
+
+  $grid.innerHTML = list.map(p => `
+    <article class="card">
+      <img class="img" src="${p.image_url}" alt="${p.title}"/>
+      <div class="body">
+        <div class="row">
+          <div class="badge">${(p.supplier_sku || "SKU")}</div>
+          <div class="price">${CLP.format(p.price || 0)}</div>
+        </div>
+        <div class="title">${p.title}</div>
+        <div class="desc">${p.description || ""}</div>
+        <div class="row">
+          <button class="btn" onclick='buy(${p.id})'>Comprar</button>
+        </div>
+      </div>
+    </article>
+  `).join("");
+}
+
+async function buy(productId){
+  try{
+    const body = { items: [{ product_id: productId, qty: 1 }] };
+    const res = await fetch("/api/orders/checkout", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(body)
+    });
+    if(!res.ok){
+      const txt = await res.text().catch(()=> "");
+      throw new Error(\`Error creando checkout (HTTP \${res.status}): \${txt}\`);
+    }
+    const data = await res.json();
+    if(data.checkout_url){
+      location.href = data.checkout_url;
+    }else{
+      toast("No se recibió URL de pago");
+    }
+  }catch(e){
+    console.error(e);
+    toast("No se pudo iniciar el pago");
+  }
+}
+
+(async function init(){
+  try{
+    const products = await fetchProducts();
+    render(products);
+    $q.addEventListener("input", () => render(products));
+  }catch(e){
+    $grid.innerHTML = `<div style="color:#ff8585">Error: ${e.message}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
+"""
 @app.get("/api/health")
 async def health():
     return {"ok": True}
-
 
 # ====== (NUEVO) Rutas de confirmación/cancelación ANTES de montar estáticos ======
 @app.get("/success", response_class=HTMLResponse)
@@ -126,10 +235,10 @@ async def cancel():
 # ================================================================================
 
 
-# ----- Servir export estático de Next.js (si existe ./static) -----
-if os.path.isdir("./static"):
-    app.mount("/", StaticFiles(directory="./static", html=True), name="static")
 
+# --- Servir archivos estáticos (CSS, imágenes, etc.) ---
+if os.path.isdir("./static"):
+    app.mount("/static", StaticFiles(directory="./static"), name="static")
 
 # ----- Demo de “auto publicación” en background -----
 CANDIDATES = [
@@ -160,7 +269,6 @@ CANDIDATES = [
         score=79,
     ),
 ]
-
 
 async def auto_publisher():
     # Publica uno al arrancar
