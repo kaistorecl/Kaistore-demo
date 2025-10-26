@@ -53,13 +53,3 @@ class CheckoutSession(Base):
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from sqlalchemy.sql import func
 
-class Order(Base):
-    __tablename__ = "orders"
-
-    id = Column(Integer, primary_key=True)
-    session_id = Column(String, index=True, unique=True)  # ID de la sesión de Checkout (Stripe)
-    status = Column(String, default="created")            # created | complete | canceled
-    email = Column(String, nullable=True)
-    currency = Column(String, default="CLP")
-    amount = Column(Float, default=0.0)                   # monto en moneda normal (no centavos)
-    created_at = Column(DateTime, server_default=func.now())
