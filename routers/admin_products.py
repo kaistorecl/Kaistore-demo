@@ -1,7 +1,9 @@
 # routers/admin_products.py
 
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from typing import List, Dict, Any
 
 from db import get_db, get_draft_products, publish_product
 
@@ -10,15 +12,15 @@ router = APIRouter(
     tags=["admin-products"]
 )
 
-# Cambia esto por algo largo y secreto antes de subirlo público
-ADMIN_SECRET = "CAMBIA_ESTO_POR_UN_TOKEN_LARGO"
+# Sube esto como variable de entorno ADMIN_SECRET en Render
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "CAMBIA_ESTO_POR_UN_TOKEN_LARGO")
 
 
 @router.get("/drafts")
 def list_drafts(
     secret: str = Query(..., description="Admin token"),
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
     """
     Devuelve los productos que están en 'draft'.
     Esto es lo que vas a mostrar en /dashboard para decidir qué publicar.
@@ -46,7 +48,7 @@ def publish_product_endpoint(
     product_id: int,
     secret: str = Query(..., description="Admin token"),
     price: float = Query(..., description="Nuevo precio público"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Cambia un producto a 'published' y actualiza su precio.
