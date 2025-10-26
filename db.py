@@ -1,26 +1,19 @@
 # db.py
 
+import os
+from datetime import datetime
+from typing import List, Optional
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from typing import List, Optional
-from datetime import datetime
-
-from models import Product  # importante: importa el Product que acabas de actualizar
 
 # -------------------------------------------------------------------
 # CONFIG DB
 # -------------------------------------------------------------------
-# Ajusta esto si en config.py ya tenías DATABASE_URL. Si lo tienes,
-# puedes importar DATABASE_URL desde config.py en lugar de hardcodearlo.
 
-# Ejemplo:
-# from config import DATABASE_URL
-# engine = create_engine(DATABASE_URL)
-
-# Si aún no tienes DATABASE_URL centralizado, déjalo así por ahora
-# y luego lo cambias a lo que Render esté usando (Postgres, etc.):
-
-DATABASE_URL = "sqlite:///./kaistore.db"  # <- placeholder local. En Render será postgresql://...
+# Render normalmente te setea DATABASE_URL en variables de entorno (Postgres).
+# Localmente podemos usar sqlite.
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./kaistore.db")
 
 engine = create_engine(
     DATABASE_URL,
@@ -33,13 +26,12 @@ Base = declarative_base()
 
 
 # -------------------------------------------------------------------
-# UTILS DE SESIÓN (FastAPI style dependency)
+# FastAPI dependency para obtener sesión DB en endpoints
 # -------------------------------------------------------------------
 def get_db():
     """
-    Dependency para inyectar sesión DB en los endpoints.
-    Uso en routers:
-    db: Session = Depends(get_db)
+    Uso en routers FastAPI:
+        db: Session = Depends(get_db)
     """
     db = SessionLocal()
     try:
@@ -49,39 +41,44 @@ def get_db():
 
 
 # -------------------------------------------------------------------
-# CRUD helpers para Product
+# CRUD helpers de Product
+# IMPORTANTE: acá NO importamos Product arriba para evitar el import circular.
+# Lo importamos adentro de cada función.
 # -------------------------------------------------------------------
 
-def get_published_products(db: Session) -> List[Product]:
+def get_published_products(db: Session) -> List["Product"]:
     """
-    Retorna todos los productos con status = 'published'.
-    Estos son los que deben mostrarse en la tienda pública.
+    Retorna todos los productos con status = 'published'
+    (estos se muestran en la tienda pública).
     """
+    from models import Product
     return db.query(Product).filter(Product.status == "published").all()
 
 
-def get_product_by_id(db: Session, product_id: int) -> Optional[Product]:
+def get_product_by_id(db: Session, product_id: int) -> Optional["Product"]:
     """
-    Trae un producto por id.
-    Sirve para página de detalle y para el chatbot.
+    Trae un producto por ID.
+    Sirve para la página de detalle y para soportar checkout.
     """
+    from models import Product
     return db.query(Product).filter(Product.id == product_id).first()
 
 
-def get_draft_products(db: Session) -> List[Product]:
+def get_draft_products(db: Session) -> List["Product"]:
     """
-    Retorna productos en estado 'draft', que la IA (o tú) crearon
-    pero que aún no están publicados al público.
-    Esto se mostrará en /dashboard para que tú los apruebes.
+    Retorna todos los productos con status = 'draft'
+    (estos son los que propone la IA o subes tú pero sin publicar aún).
     """
+    from models import Product
     return db.query(Product).filter(Product.status == "draft").all()
 
 
-def publish_product(db: Session, product_id: int, new_price: float) -> Optional[Product]:
+def publish_product(db: Session, product_id: int, new_price: float) -> Optional["Product"]:
     """
-    Cambia un producto desde draft -> published y ajusta precio.
-    Esto es lo que hace el botón "Publicar".
+    Cambia un producto de 'draft' -> 'published' y actualiza su precio.
+    Lo usa el panel admin.
     """
+    from models import Product
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         return None
