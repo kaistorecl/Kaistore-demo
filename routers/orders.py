@@ -104,31 +104,29 @@ def checkout(payload: CheckoutIn, request: Request):
             success_url=success_url,
             cancel_url=cancel_url,
         )
+# Guardar la orden en la base de datos
+    from models import Order
+    try:
+        total_amount = sum(li["price_data"]["unit_amount"] * li["quantity"] for li in line_items)
+        currency = line_items[0]["price_data"]["currency"].upper() if line_items else "CLP"
 
-        # Guardar la orden en la base de datos
-from models import Order
-
-try:
-    total_amount = sum(li["price_data"]["unit_amount"] * li["quantity"] for li in line_items) / 100.0
-    currency = line_items[0]["price_data"]["currency"].upper() if line_items else "CLP"
-
-    order = Order(
-        session_id=session.id,
-        status="created",
-        email=None,
-        currency=currency,
-        amount=total_amount,
-    )
-    db.add(order)
-    db.commit()
-except Exception as e:
-    print(f"⚠️ Error guardando orden: {e}")
-        # Respuesta esperada por el front
-        return {
-            "checkout_url": session.url,
-            "id": session.id,
-            "url": session.url,
-        }
-
+        order = Order(
+            session_id=session.id,
+            status="created",
+            email=None,
+            currency=currency,
+            amount=total_amount,
+        )
+        db.add(order)
+        db.commit()
+    except Exception as e:
+        print(f"⚠️ Error guardando orden: {e}")
     finally:
         db.close()
+
+    # Respuesta esperada por el front
+    return {
+        "checkout_url": session.url,
+        "id": session.id,
+        "url": session.url,
+    }
