@@ -1,22 +1,22 @@
 # db.py
 
+import os
+from datetime import datetime
+from typing import List, Optional
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from typing import List, Optional
-from datetime import datetime
-import os
 
-# Importa Product DESPUÉS de definir Base (evitamos ciclo raro)
+# Creamos Base primero
 Base = declarative_base()
 
 # -------------------------------------------------------------------
 # CONFIG DB
 # -------------------------------------------------------------------
-# Render normalmente te da DATABASE_URL en variables de entorno.
-# Si no existe, usamos sqlite local (para que siga funcionando localmente).
+# En Render normalmente tienes DATABASE_URL (Postgres).
+# Si no existe, usamos sqlite local para desarrollo.
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./kaistore.db")
 
-# Si es sqlite, necesitamos connect_args especiales.
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
 engine = create_engine(
@@ -24,19 +24,22 @@ engine = create_engine(
     connect_args=connect_args,
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+)
 
-# Importar Product después de Base para evitar import circular
+# Importar Product después de definir Base/engine para evitar ciclo
 from models import Product  # noqa: E402
 
 
 # -------------------------------------------------------------------
-# Dependency de sesión (FastAPI Depends)
+# Dependency para FastAPI (inyectar sesión db)
 # -------------------------------------------------------------------
 def get_db():
     """
-    Dependency para inyectar sesión DB en los endpoints.
-    Uso en routers:
+    Uso en endpoints:
         db: Session = Depends(get_db)
     """
     db = SessionLocal()
@@ -47,30 +50,29 @@ def get_db():
 
 
 # -------------------------------------------------------------------
-# CRUD helpers para Product
+# CRUD helpers Product
 # -------------------------------------------------------------------
 
 def get_published_products(db: Session) -> List[Product]:
     """
-    Retorna todos los productos con status = 'published'.
-    Estos son los que deben mostrarse en la tienda pública.
+    Todos los productos con status='published'.
+    Estos son los que salen en la tienda pública.
     """
     return db.query(Product).filter(Product.status == "published").all()
 
 
 def get_product_by_id(db: Session, product_id: int) -> Optional[Product]:
     """
-    Trae un producto por id.
-    Sirve para página de detalle y para el chatbot.
+    Buscar un producto por id.
+    Sirve para detalle de producto o para el checkout.
     """
     return db.query(Product).filter(Product.id == product_id).first()
 
 
 def get_draft_products(db: Session) -> List[Product]:
     """
-    Retorna productos en estado 'draft', que la IA (o tú) crearon
-    pero que aún no están publicados al público.
-    Esto se mostrará en /dashboard para que tú los apruebes.
+    Productos en estado 'draft' (aún no publicados).
+    El panel admin muestra esto para que tú decidas qué publicar.
     """
     return db.query(Product).filter(Product.status == "draft").all()
 
@@ -95,11 +97,11 @@ def publish_product(db: Session, product_id: int, new_price: float) -> Optional[
 
 def create_demo_draft(db: Session) -> Product:
     """
-    Inserta un producto DEMO en estado 'draft'.
-    Este producto simula lo que haría la IA.
-    Devuelve el Product creado.
+    Inserta un producto DEMO como 'draft'.
+    Simula lo que generaría la IA.
     """
     import json
+
     demo = Product(
         title="Corrector cervical portátil",
         slug="corrector-cervical-portatil",
@@ -139,3 +141,11 @@ def create_demo_draft(db: Session) -> Product:
     db.commit()
     db.refresh(demo)
     return demo
+
+
+def get_all_products(db: Session) -> List[Product]:
+    """
+    DEBUG: trae TODOS los productos sin filtrar.
+    Sirve para diagnosticar por qué drafts/published salen vacíos.
+    """
+    return db.query(Product).all()
