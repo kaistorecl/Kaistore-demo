@@ -59,48 +59,56 @@ async def home():
   <div id="toast" class="toast"></div>
 
 <script>
-const $grid = document.getElementById("grid");
-const $q = document.getElementById("q");
+// Referencias
+const $grid  = document.getElementById("grid");
+const $q     = document.getElementById("q");
 const $toast = document.getElementById("toast");
 
+// Formateador CLP
 const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" });
 
+// Toast simple
 function toast(msg){
   $toast.textContent = msg;
   $toast.classList.add("show");
   setTimeout(()=> $toast.classList.remove("show"), 1800);
 }
 
+// Cargar productos
 async function fetchProducts(){
+  console.log("→ Fetch /api/products");
   const res = await fetch("/api/products");
-  if(!res.ok){ throw new Error("No se pudieron cargar productos"); }
+  if(!res.ok){
+    const txt = await res.text().catch(()=> "");
+    throw new Error(`No se pudieron cargar productos (HTTP ${res.status}): ${txt}`);
+  }
   return await res.json();
 }
 
+// Renderizar productos
 function render(products){
   if(!products || products.length === 0){
-    $grid.innerHTML = `
-      <div style="color:#aaa; text-align:center; padding:2rem;">
-        No hay productos disponibles por el momento.
-      </div>`;
+    $grid.innerHTML = `<div style="color:#999; text-align:center; padding:2rem;">No hay productos disponibles</div>`;
     return;
   }
 
   const term = ($q.value || "").toLowerCase().trim();
-  const list = term ? products.filter(p =>
-    (p.title || "").toLowerCase().includes(term) ||
-    (p.description || "").toLowerCase().includes(term)
-  ) : products;
+  const list = term
+    ? products.filter(p =>
+        (p.title||"").toLowerCase().includes(term) ||
+        (p.description||"").toLowerCase().includes(term)
+      )
+    : products;
 
   $grid.innerHTML = list.map(p => `
     <article class="card" style="animation: fadein .4s ease;">
-<img class="img"
-     src="${p.image_url || 'https://via.placeholder.com/400x400?text=Sin+Imagen'}"
-     alt="${p.title || 'Producto'}"
-     onerror="this.src='https://via.placeholder.com/400x400?text=Sin+Imagen';"/>
+      <img class="img"
+           src="${p.image_url || 'https://via.placeholder.com/400x400?text=Sin+Imagen'}"
+           alt="${p.title || 'Producto'}"
+           onerror="this.src='https://via.placeholder.com/400x400?text=Sin+Imagen';"/>
       <div class="body">
         <div class="row">
-          <div class="badge">${p.supplier_sku || 'SKU'}</div>
+          <div class="badge">${p.supplier_sku || "SKU"}</div>
           <div class="price">${CLP.format(p.price || 0)}</div>
         </div>
         <div class="title">${p.title || ''}</div>
@@ -113,24 +121,23 @@ function render(products){
   `).join("");
 }
 
-// animación suave
+// Animación fade-in
 const style = document.createElement("style");
-style.textContent = `
-@keyframes fadein { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-`;
+style.textContent = `@keyframes fadein { from { opacity:0; transform:translateY(5px);} to {opacity:1; transform:none;} }`;
 document.head.appendChild(style);
 
+// Proceso de compra
 async function buy(productId){
   try{
     const body = { items: [{ product_id: productId, qty: 1 }] };
     const res = await fetch("/api/orders/checkout", {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
       body: JSON.stringify(body)
     });
     if(!res.ok){
       const txt = await res.text().catch(()=> "");
-      throw new Error(\`Error creando checkout (HTTP \${res.status}): \${txt}\`);
+      throw new Error(`Error creando checkout (HTTP ${res.status}): ${txt}`);
     }
     const data = await res.json();
     if(data.checkout_url){
@@ -144,13 +151,16 @@ async function buy(productId){
   }
 }
 
+// Inicializar página
 (async function init(){
+  $grid.innerHTML = `<div style="color:#9aa4b2; text-align:center; padding:2rem;">Cargando productos…</div>`;
   try{
     const products = await fetchProducts();
     render(products);
     $q.addEventListener("input", () => render(products));
   }catch(e){
-    $grid.innerHTML = `<div style="color:#ff8585">Error: ${e.message}</div>`;
+    console.error("init error:", e);
+    $grid.innerHTML = `<div style="color:#ff8585; text-align:center; padding:2rem;">Error: ${e.message}</div>`;
   }
 })();
 </script>
