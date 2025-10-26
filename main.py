@@ -46,54 +46,67 @@ async def success():
   <p style="margin-top:2rem"><a href="/" style="color:#4ade80">Volver a la tienda</a></p>
 
   <script>
-    (async function() {
-      const params = new URLSearchParams(location.search);
-      const sid = params.get("session_id");
-      if (!sid) {
-        document.getElementById("details").textContent = "No se encontró session_id en la URL.";
-        return;
-      }
-      try {
-        const res = await fetch(`/api/payments/session/${sid}`);
-        if (!res.ok) {
-          document.getElementById("details").textContent = "No pudimos recuperar los detalles del pago.";
-          return;
-        }
-        const data = await res.json();
-        // Algunas monedas no usan decimales (CLP, JPY, KRW, etc.)
-const zeroDecimal = new Set([
-  "BIF","CLP","DJF","GNF","JPY","KMF","KRW","MGA","PYG","RWF",
-  "UGX","VND","VUV","XAF","XOF","XPF"
-]);
+(async function () {
+  const params = new URLSearchParams(location.search);
+  const sid = params.get("session_id");
+  if (!sid) {
+    document.getElementById("details").textContent =
+      "No se encontró session_id en la URL.";
+    return;
+  }
 
-let amount = data.amount_total || 0;
-const curr = (data.currency || "CLP").toUpperCase();
-const isZero = zeroDecimal.has(curr);
+  try {
+    const res = await fetch(`/api/payments/session/${sid}`);
 
-// Si no tiene decimales NO dividimos entre 100
-const monto = isZero ? amount : amount / 100;
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      document.getElementById("details").textContent =
+        `No pudimos recuperar los detalles (HTTP ${res.status}). ${text || ""}`.trim();
+      return;
+    }
 
-// Formato bonito
-const fmt = new Intl.NumberFormat("es-CL", {
-  style: "currency",
-  currency: curr,
-  minimumFractionDigits: isZero ? 0 : 2,
-  maximumFractionDigits: isZero ? 0 : 2
-});
+    // Parseo seguro
+    const dataText = await res.text();
+    let data;
+    try {
+      data = JSON.parse(dataText);
+    } catch (e) {
+      document.getElementById("details").textContent =
+        "El servidor respondió pero no envió JSON válido: " + dataText.slice(0, 200);
+      return;
+    }
 
-document.getElementById("details").textContent =
-  `Recibimos ${fmt.format(monto)} de ${email}. ` +
-  `Estado: ${estado}. (ID: ${data.id})`;
-        const moneda = (data.currency || "CLP").toUpperCase();
-        const email = data.customer_email || "cliente";
-        const estado = data.status || "DESCONOCIDO";
-        document.getElementById("details").textContent =
-          `Recibimos ${monto} ${moneda} de ${email}. Estado: ${estado}. (ID: ${data.id})`;
-      } catch (e) {
-        document.getElementById("details").textContent = "Error consultando detalles.";
-      }
-    })();
-  </script>
+    // Monedas sin decimales (CLP, etc.)
+    const zeroDecimal = new Set([
+      "BIF","CLP","DJF","GNF","JPY","KMF","KRW","MGA","PYG","RWF",
+      "UGX","VND","VUV","XAF","XOF","XPF"
+    ]);
+
+    const curr = (data.currency || "CLP").toUpperCase();
+    const isZero = zeroDecimal.has(curr);
+    const amountRaw = data.amount_total || 0;
+    const amount = isZero ? amountRaw : amountRaw / 100;
+
+    const fmt = new Intl.NumberFormat("es-CL", {
+      style: "currency",
+      currency: curr,
+      minimumFractionDigits: isZero ? 0 : 2,
+      maximumFractionDigits: isZero ? 0 : 2
+    });
+
+    const email = data.customer_email || "—";
+    const estado = (data.status || "DESCONOCIDO").toLowerCase();
+
+    document.getElementById("details").textContent =
+      `Recibimos ${fmt.format(amount)} de ${email}. ` +
+      `Estado: ${estado}. (ID: ${data.id})`;
+
+  } catch (e) {
+    document.getElementById("details").textContent =
+      "Error consultando detalles: " + (e && (e.message || e.toString()));
+  }
+})();
+</script>
 </body>
 </html>
 """
