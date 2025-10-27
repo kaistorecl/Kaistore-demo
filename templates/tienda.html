@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es" style="background-color:#0f172a; color:#fff; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Kaistore · Catálogo</title>
+
+    <!-- CSS básico -->
+    <link rel="stylesheet" href="/static/style.css" />
+
+    <style>
+        /* fallback rápido por si el style.css no carga */
+        .fallback-card {
+            background-color:#1e2539;
+            border-radius:16px;
+            padding:16px;
+            box-shadow:0 20px 40px rgba(0,0,0,0.6);
+            border:1px solid rgba(255,255,255,0.08);
+        }
+    </style>
+</head>
+
+<body style="max-width:1200px; margin:0 auto; padding:24px;">
+
+    <header style="text-align:center; margin-bottom:32px;">
+        <h1 style="font-size:1.5rem; font-weight:600; color:#fff; margin-bottom:4px;">
+            🛒 Catálogo Kaistore
+        </h1>
+        <p style="color:#94a3b8; font-size:0.9rem;">
+            Productos para trabajar más cómodo y con menos dolor.
+        </p>
+    </header>
+
+    {% if products|length == 0 %}
+        <div style="text-align:center; color:#94a3b8;">
+            <p>No hay productos publicados todavía 🙈</p>
+            <p style="font-size:0.8rem;">(Publica uno desde /docs → PATCH /api/admin/products/{id}/publish)</p>
+        </div>
+    {% else %}
+
+    <!-- GRID -->
+    <section style="
+        display:grid;
+        grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));
+        gap:24px;
+    ">
+        {% for p in products %}
+        <article class="fallback-card">
+            <!-- Imagen principal -->
+            {% if p.image_urls and p.image_urls|length > 0 %}
+                <div style="border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.08); background:#0f172a;">
+                    <img
+                        src="{{ p.image_urls[0] }}"
+                        alt="{{ p.title_marketing or 'Producto' }}"
+                        style="display:block; width:100%; height:180px; object-fit:cover; background:#0f172a;"
+                    />
+                </div>
+            {% endif %}
+
+            <!-- Texto -->
+            <div style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
+                <h2 style="font-size:1rem; font-weight:600; color:#fff; line-height:1.4;">
+                    {{ p.title_marketing }}
+                </h2>
+
+                {% if p.short_bullets and p.short_bullets|length > 0 %}
+                <ul style="color:#94a3b8; font-size:0.8rem; line-height:1.4; padding-left:1rem; list-style-type:disc;">
+                    {% for bullet in p.short_bullets[:3] %}
+                        <li>{{ bullet }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+
+                <!-- Precio -->
+                <div style="display:flex; align-items:baseline; gap:6px;">
+                    <span style="color:#fff; font-size:1.1rem; font-weight:600;">
+                        ${{ "{:,}".format(p.price)|replace(",", ".") }}
+                    </span>
+                    <span style="color:#94a3b8; font-size:0.75rem; font-weight:400;">
+                        {{ p.currency }}
+                    </span>
+                </div>
+
+                <!-- CTA (futuro: ir al checkout) -->
+                <button
+                    style="
+                        background:linear-gradient(90deg,#4f46e5 0%,#6366f1 100%);
+                        border:none;
+                        color:#fff;
+                        font-size:0.9rem;
+                        font-weight:600;
+                        line-height:1.2;
+                        padding:10px 14px;
+                        border-radius:10px;
+                        width:100%;
+                        box-shadow:0 16px 30px rgba(79,70,229,0.4);
+                        cursor:pointer;
+                    "
+                    disabled
+                    title="Pronto: comprar con Stripe"
+                >
+                    Comprar (coming soon)
+                </button>
+
+                {% if p.score %}
+                <div style="text-align:right;">
+                    <span style="font-size:0.7rem; color:#475569;">
+                        score IA: {{ "%.2f"|format(p.score) }}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </section>
+
+    {% endif %}
+
+    <footer style="text-align:center; margin-top:40px; color:#475569; font-size:0.7rem;">
+        <p>Demo generada automáticamente · FastAPI + Render 🪄</p>
+    </footer>
+
+</body>
+</html>
