@@ -135,3 +135,31 @@ html, body {
   font-size: 13px;
   padding: 24px;
 }
+
+/* ---- Layout general de la página ---- */
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* ---- Encabezado de sección Catálogo ---- */
+.section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.section-desc {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0;
+}
