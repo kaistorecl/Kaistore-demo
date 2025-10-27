@@ -168,22 +168,20 @@ def auto_generate_endpoint(
     Genera un producto usando ideas simuladas de IA y lo guarda en la DB.
     Si publish=True, lo publica automáticamente.
 
-    NOTA IMPORTANTE:
-    - Antes intentábamos pasar 'short_bullets' al modelo Product y eso rompía,
-      porque en tu modelo real esa columna NO existe.
-    - Ahora solamente seteamos campos que SABEMOS que existen en tu DB:
-      title_marketing, price, currency, status, source_label, score, image_urls.
+    Ajustado para tu modelo real:
+    - Usa marketing_title (no title_marketing).
+    - No pasa short_bullets porque en tu modelo eso no existe.
     """
 
+    # 1. seguridad
     require_secret(secret)
 
-    # 1. Obtener una idea simulada
+    # 2. obtener una idea simulada
     idea = pick_idea()
 
-    # 2. Crear el objeto Product. OJO: NO le pasamos short_bullets porque
-    #    tu modelo real dijo "eso no existe".
+    # 3. crear el draft en la base con SOLO columnas reales del modelo Product
     p = Product(
-        title_marketing=idea.get("title_marketing", "Producto IA misterioso"),
+        marketing_title=idea.get("title_marketing", "Producto IA misterioso"),
         price=idea.get("price", 9990),
         currency=idea.get("currency", "CLP"),
         status="draft",
@@ -195,22 +193,23 @@ def auto_generate_endpoint(
     db.commit()
     db.refresh(p)
 
-    # 3. Si publish=True, lo pasamos a published inmediatamente
+    # 4. si publish=True lo marcamos como publicado
     if publish:
         p.status = "published"
         db.add(p)
         db.commit()
         db.refresh(p)
 
-    # 4. Preparamos una respuesta clara
+    # 5. responder
     return {
         "status": "ok",
         "id": p.id,
         "published": (p.status == "published"),
         "price": p.price,
         "preview": {
-            "title_marketing": p.title_marketing,
-            # Nota: no devolvemos short_bullets porque no existe en tu modelo,
+            # OJO: ahora sacamos el título desde marketing_title
+            "title_marketing": getattr(p, "marketing_title", None),
+            # tu modelo no tenía short_bullets obligatorio, así que no lo devolvemos
             "image_urls": getattr(p, "image_urls", []),
         },
     }
