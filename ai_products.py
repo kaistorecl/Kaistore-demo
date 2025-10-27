@@ -1,7 +1,6 @@
 # ai_products.py
 import random
 
-# Pequeño catálogo de ideas simulando lo que haría la IA
 IDEAS = [
     {
         "title_marketing": "Almohada cervical ergonómica premium",
@@ -52,6 +51,5 @@ IDEAS = [
 
 def pick_idea() -> dict:
     idea = random.choice(IDEAS)
-    # agrega un score “IA”
-    idea = {**idea, "score": round(random.uniform(0.7, 0.95), 2)}
-    return idea
+    # score simulado
+    return {**idea, "score": 0.85}
