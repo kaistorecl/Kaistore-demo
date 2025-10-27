@@ -15,21 +15,17 @@ from db import (
 )
 from models import Product
 
-# Intentamos importar la "idea IA" simulada
-# Si falla, usamos un fallback local para no romper.
+# Intentar importar la IA simulada; si falla, usar fallback seguro.
 try:
     from ai_products import pick_idea
 except Exception:
     def pick_idea():
+        # Fallback simple por si ai_products.py no carga.
         return {
             "title_marketing": "Producto IA de ejemplo",
             "price": 7990,
             "currency": "CLP",
-            "image_urls": [
-                "https://via.placeholder.com/800x600?text=ai-main",
-                "https://via.placeholder.com/800x600?text=ai-side",
-            ],
-            "score": 87,
+            "score": 85,
         }
 
 router = APIRouter(
@@ -37,21 +33,20 @@ router = APIRouter(
     tags=["admin-products"],
 )
 
-# =============================================================================
+# =====================================================================
 # Auth simple via ?secret=
-# =============================================================================
+# =====================================================================
 
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "CAMBIA_ESTO_POR_UN_TOKEN_LARGO")
-
 
 def require_secret(secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="No autorizado")
 
 
-# =============================================================================
+# =====================================================================
 # 0. DEBUG TOTAL
-# =============================================================================
+# =====================================================================
 
 @router.get("/debug_all")
 def debug_all(
@@ -67,29 +62,30 @@ def debug_all(
     return [
         {
             "id": p.id,
-            "title_marketing": getattr(p, "title_marketing", None),
-            "status": getattr(p, "status", None),
-            "price": getattr(p, "price", None),
-            "currency": getattr(p, "currency", None),
-            "score": getattr(p, "score", None),
-            "source_label": getattr(p, "source_label", None),
+            "title": p.title,
+            "marketing_title": getattr(p, "marketing_title", None),
+            "status": p.status,
+            "price": p.price,
+            "currency": p.currency,
+            "score": p.score,
+            "source_label": p.source_label,
         }
         for p in rows
     ]
 
 
-# =============================================================================
-# 1. Crear draft DEMO manual
-# =============================================================================
+# =====================================================================
+# 1. Crear draft DEMO manual (lo que antes hacías como "seed_demo")
+# =====================================================================
 
-@router.get("/seed_demo")
+@router.get("/seed_demo", summary="Seed Demo")
 def seed_demo(
     secret: str = Query(..., description="Admin token"),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     Inserta un producto de prueba en estado 'draft'.
-    Simula lo que haría la IA, pero con datos fijos que sabemos que funcionan.
+    Simula lo que haría la IA, pero con datos hardcodeados.
     """
     require_secret(secret)
     demo = create_demo_draft(db)
@@ -100,39 +96,41 @@ def seed_demo(
     }
 
 
-# =============================================================================
-# 2. Ver todos los drafts
-# =============================================================================
+# =====================================================================
+# 2. Ver todos los drafts (estado = 'draft')
+# =====================================================================
 
-@router.get("/drafts")
+@router.get("/drafts", summary="List Drafts")
 def list_drafts(
     secret: str = Query(..., description="Admin token"),
     db: Session = Depends(get_db),
 ) -> List[Dict[str, Any]]:
     """
     Devuelve solo los productos con estado 'draft'.
-    Esto es lo que tu dashboard (futuro) debería mostrar.
+    Esto es lo que tu dashboard (futuro panel admin) va a mostrar.
     """
     require_secret(secret)
     drafts = get_draft_products(db)
     return [
         {
             "id": p.id,
-            "title_marketing": getattr(p, "title_marketing", None),
-            "price": getattr(p, "price", None),
-            "status": getattr(p, "status", None),
-            "score": getattr(p, "score", None),
-            "source_label": getattr(p, "source_label", None),
+            # OJO: en la DB la columna podría ser marketing_title,
+            # pero en la respuesta pública usamos title_marketing.
+            "title_marketing": getattr(p, "marketing_title", p.title),
+            "price": p.price,
+            "status": p.status,
+            "score": p.score,
+            "source_label": p.source_label,
         }
         for p in drafts
     ]
 
 
-# =============================================================================
-# 3. Publicar un producto (draft -> published)
-# =============================================================================
+# =====================================================================
+# 3. Publicar un producto (cambiar draft -> published)
+# =====================================================================
 
-@router.patch("/products/{product_id}/publish")
+@router.patch("/products/{product_id}/publish", summary="Publish Product Endpoint")
 def publish_product_endpoint(
     product_id: int,
     secret: str = Query(..., description="Admin token"),
@@ -155,9 +153,10 @@ def publish_product_endpoint(
     }
 
 
-# =============================================================================
-# 4. Auto-generar productos con IA simulada (arreglado)
-# =============================================================================
+# =====================================================================
+# 4. Auto-generar productos con IA simulada
+# =====================================================================
+
 @router.post("/auto_generate", summary="Genera un producto (IA simulada) y lo guarda como draft")
 def auto_generate_endpoint(
     secret: str = Query(..., description="Admin token"),
@@ -166,50 +165,59 @@ def auto_generate_endpoint(
 ) -> Dict[str, Any]:
     """
     Genera un producto usando ideas simuladas de IA y lo guarda en la DB.
-    Si publish=True, lo publica automáticamente.
+    Si publish=True, lo marca como 'published'.
 
-    Ajustado para tu modelo real:
-    - Usa marketing_title (no title_marketing).
-    - No pasa short_bullets porque en tu modelo eso no existe.
+    MUY IMPORTANTE:
+    - SOLO usamos columnas que SABEMOS que existen en tu tabla 'products',
+      para no crashear con columnas inexistentes como short_bullets o image_urls.
     """
 
-    # 1. seguridad
+    # 1. Seguridad
     require_secret(secret)
 
-    # 2. obtener una idea simulada
+    # 2. Idea simulada de IA
     idea = pick_idea()
 
-    # 3. crear el draft en la base con SOLO columnas reales del modelo Product
+    # Sacamos valores seguros de esa idea
+    marketing_title_value = idea.get("title_marketing", "Producto IA misterioso")
+    price_value = idea.get("price", 9990)
+    currency_value = idea.get("currency", "CLP")
+    score_value = idea.get("score", 85)
+
+    # 3. Creamos un draft en la DB
+    #    NOTA: usamos "marketing_title=" porque en tu DB ya vimos
+    #    que luego /drafts responde con "title_marketing".
+    #    Eso significa que probablemente la columna real es marketing_title.
     p = Product(
-        marketing_title=idea.get("title_marketing", "Producto IA misterioso"),
-        price=idea.get("price", 9990),
-        currency=idea.get("currency", "CLP"),
+        marketing_title=marketing_title_value,
+        price=price_value,
+        currency=currency_value,
         status="draft",
         source_label="ai_seed_v1",
-        score=idea.get("score", 85),
-        image_urls=idea.get("image_urls", []),
+        score=score_value,
     )
     db.add(p)
     db.commit()
     db.refresh(p)
 
-    # 4. si publish=True lo marcamos como publicado
+    # 4. Si publish=True => pasamos a 'published'
     if publish:
         p.status = "published"
         db.add(p)
         db.commit()
         db.refresh(p)
 
-    # 5. responder
+    # 5. Respondemos algo amigable para que Swagger te muestre
+    #    qué se creó
     return {
         "status": "ok",
         "id": p.id,
         "published": (p.status == "published"),
         "price": p.price,
         "preview": {
-            # OJO: ahora sacamos el título desde marketing_title
             "title_marketing": getattr(p, "marketing_title", None),
-            # tu modelo no tenía short_bullets obligatorio, así que no lo devolvemos
-            "image_urls": getattr(p, "image_urls", []),
+            "price": p.price,
+            "currency": getattr(p, "currency", None),
+            "status": p.status,
         },
     }
