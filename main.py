@@ -19,12 +19,20 @@ from publishing import publish_product
 from config import settings
 
 
+# -------------------------------------------------------------------
+# FastAPI app
+# -------------------------------------------------------------------
 app = FastAPI(
     title="Kaistore API + Front",
     description="Catálogo dinámico + Checkout + Admin draft/publish",
     version="0.2.0",
 )
 
+# servir archivos estáticos (CSS, img, etc.) desde /static/*
+# IMPORTANTE: necesita que exista la carpeta local ./static/
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# CORS abierto (sandbox)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,22 +42,32 @@ app.add_middleware(
 )
 
 
+# -------------------------------------------------------------------
+# DB init al arrancar
+# -------------------------------------------------------------------
 @app.on_event("startup")
 def _init_db():
     Base.metadata.create_all(bind=engine)
 
 
-# monta catálogo público (/api/products/published, /api/products/{id})
+# -------------------------------------------------------------------
+# Routers existentes (API pública, admin y pagos)
+# -------------------------------------------------------------------
+# catálogo público: /api/products/published , /api/products/{id}
 app.include_router(catalog_public.router)
 
-# monta admin (/api/admin/drafts, /api/admin/products/{id}/publish)
+# admin: /api/admin/drafts , /api/admin/auto_generate , etc.
 app.include_router(admin_products.router)
 
-# monta checkout / pagos que ya usabas
+# checkout / pagos Stripe
 app.include_router(orders.router)
 app.include_router(payments.router)
 
 
+# -------------------------------------------------------------------
+# Landing principal "/" = tienda reactiva en vanilla JS
+# (render HTML + usa /api/products/published vía fetch)
+# -------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def home():
     return """
@@ -385,11 +403,17 @@ async function startCheckout(productId){
 """  # noqa: E501
 
 
+# -------------------------------------------------------------------
+# Healthcheck para monitoreo
+# -------------------------------------------------------------------
 @app.get("/api/health")
 async def health():
     return {"ok": True}
 
 
+# -------------------------------------------------------------------
+# Página de éxito post-pago (Stripe redirect success_url)
+# -------------------------------------------------------------------
 @app.get("/success", response_class=HTMLResponse)
 async def success():
     return """
@@ -466,6 +490,9 @@ Consultando detalles de la orden...
 """  # noqa: E501
 
 
+# -------------------------------------------------------------------
+# Página de cancel post-pago (Stripe cancel_url)
+# -------------------------------------------------------------------
 @app.get("/cancel", response_class=HTMLResponse)
 async def cancel():
     return """
@@ -479,7 +506,11 @@ async def cancel():
 """
 
 
-# -------- Autopublisher demo --------
+# -------------------------------------------------------------------
+# Autopublisher demo:
+# - mete productos candidatos automáticamente en la DB, publicados,
+#   usando publish_product() cada cierto rato.
+# -------------------------------------------------------------------
 CANDIDATES = [
     ProductIn(
         title="Llave ahorradora de agua 360°",
@@ -512,16 +543,17 @@ CANDIDATES = [
 
 
 async def auto_publisher():
-    # intenta publicar todos al inicio
+    # intenta publicar todos al inicio (pequeño delay para que la DB esté lista)
     await asyncio.sleep(2)
     with SessionLocal() as db:
         for c in CANDIDATES:
             try:
                 publish_product(db, c)
             except Exception:
+                # si falla uno, seguimos con los otros
                 pass
 
-    # luego cada ~30min mete uno aleatorio
+    # luego cada ~30 minutos inserta uno aleatorio
     while True:
         await asyncio.sleep(1800)
         with SessionLocal() as db:
