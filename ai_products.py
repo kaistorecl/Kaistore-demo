@@ -1,91 +1,86 @@
-# ai_products.py
-#
-# Catálogo de ideas simulando lo que haría la "IA".
-# Cada idea es un producto potencial todavía no generado.
-# El endpoint /api/admin/auto_generate elige una de estas,
-# la mete en la base como draft, y opcionalmente la publica.
-
 import random
 
-IDEAS = [
-    {
-        "title_marketing": "Almohada cervical ergonómica premium",
-        "short_bullets": [
-            "Reduce tensión cervical en 15 minutos",
-            "Espuma de memoria alta densidad",
-            "Funda hipoalergénica lavable",
-            "Ideal para escritorio y viajes",
-        ],
-        "price": 5990,
-        "currency": "CLP",
-        "image_urls": [
-            "https://picsum.photos/seed/almohada-main/800/800",
-            "https://picsum.photos/seed/almohada-side/800/800",
-        ],
-        "score": 0.91,
-        "source_label": "ai_seed_v1",
-    },
-    {
-        "title_marketing": "Soporte lumbar para silla",
-        "short_bullets": [
-            "Mejora postura en teletrabajo",
-            "Malla transpirable 3D",
-            "Correas universales",
-            "Alivia zona baja de la espalda",
-        ],
-        "price": 7990,
-        "currency": "CLP",
-        "image_urls": [
-            "https://picsum.photos/seed/lumbar-main/800/800",
-            "https://picsum.photos/seed/lumbar-side/800/800",
-        ],
-        "score": 0.88,
-        "source_label": "ai_seed_v1",
-    },
-    {
-        "title_marketing": "Mouse vertical ergonómico",
-        "short_bullets": [
-            "Agarre natural para muñeca",
-            "Botones silenciosos",
-            "Conexión inalámbrica",
-            "Batería de larga duración",
-        ],
-        "price": 12990,
-        "currency": "CLP",
-        "image_urls": [
-            "https://picsum.photos/seed/mouse-main/800/800",
-            "https://picsum.photos/seed/mouse-side/800/800",
-        ],
-        "score": 0.86,
-        "source_label": "ai_seed_v1",
-    },
-    {
-        "title_marketing": "Lámpara LED portátil recargable",
-        "short_bullets": [
-            "Luz cálida o fría regulable",
-            "Hasta 12h de batería",
-            "Carga USB-C rápida",
-            "Perfecta para escritorio o velador",
-        ],
-        "price": 9990,
-        "currency": "CLP",
-        "image_urls": [
-            "https://picsum.photos/seed/lampara-main/800/800",
-            "https://picsum.photos/seed/lampara-side/800/800",
-        ],
-        "score": 0.89,
-        "source_label": "ai_seed_v1",
-    },
-]
 
-def pick_idea() -> dict:
+def pick_idea():
     """
-    Devuelve una de las ideas anteriores,
-    agregando una leve variación en 'score'
-    para que no sea siempre idéntico.
+    Devuelve una idea simulada de producto en formato dict.
+    Estas ideas las usa /api/admin/auto_generate para crear un draft.
     """
-    idea = random.choice(IDEAS)
-    return {
-        **idea,
-        "score": round(idea["score"] + random.uniform(-0.03, 0.03), 2)
-    }
+
+    ideas = [
+        {
+            "title_marketing": "Lámpara LED portátil recargable",
+            "short_bullets": [
+                "Luz potente para emergencia o camping",
+                "Batería USB recargable",
+                "Liviana y fácil de llevar",
+            ],
+            "price": 9990,
+            "currency": "CLP",
+            # usamos picsum (sirve como placeholder real, sí carga imagen)
+            "image_urls": [
+                "https://picsum.photos/seed/lampara-led/800/800"
+            ],
+            "score": 0.91,
+        },
+        {
+            "title_marketing": "Soporte lumbar para silla",
+            "short_bullets": [
+                "Mejora tu postura al trabajar",
+                "Malla transpirable 3D",
+                "Alivia zona baja de la espalda",
+            ],
+            "price": 7990,
+            "currency": "CLP",
+            "image_urls": [
+                "https://picsum.photos/seed/lumbar/800/800"
+            ],
+            "score": 0.88,
+        },
+        {
+            "title_marketing": "Almohada cervical ergonómica premium",
+            "short_bullets": [
+                "Reduce tensión en cuello en 15 minutos",
+                "Espuma memory foam de alta densidad",
+                "Ideal para escritorio y viajes",
+            ],
+            "price": 5990,
+            "currency": "CLP",
+            "image_urls": [
+                "https://picsum.photos/seed/cervical/800/800"
+            ],
+            "score": 0.86,
+        },
+        {
+            "title_marketing": "Mini ventilador USB silencioso",
+            "short_bullets": [
+                "Frescura directa en tu escritorio",
+                "Silencioso, ideal para videollamadas",
+                "Gira 360° y cabe en la mochila",
+            ],
+            "price": 4990,
+            "currency": "CLP",
+            "image_urls": [
+                "https://picsum.photos/seed/ventilador-usb/800/800"
+            ],
+            "score": 0.83,
+        },
+        {
+            "title_marketing": "Organizador plegable para closet",
+            "short_bullets": [
+                "Ahorra espacio y mantiene todo visible",
+                "Plegable, fácil de guardar",
+                "Perfecto para ropa interior y accesorios",
+            ],
+            "price": 5490,
+            "currency": "CLP",
+            "image_urls": [
+                "https://picsum.photos/seed/organizador/800/800"
+            ],
+            "score": 0.8,
+        },
+    ]
+
+    # elegimos una idea random
+    idea = random.choice(ideas)
+    return idea
