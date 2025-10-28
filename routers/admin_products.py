@@ -1,250 +1,245 @@
+# routers/admin_products.py
+#
+# Endpoints "privados" de administración.
+# Acá está:
+# - seed_demo           (cargar producto de ejemplo)
+# - drafts              (listar productos en estado draft)
+# - publish             (pasar draft -> published)
+# - auto_generate       (crear producto tipo IA)
+#
+# IMPORTANTE:
+#   - NO metemos columnas que NO existen en tu tabla products.
+#   - Rellenamos solo:
+#       title
+#       marketing_title
+#       description_long
+#       image_url
+#       price
+#       currency
+#       status
+#       score
+#       source_label
+#
+#   - Así evitamos el error "TypeError: 'description' is an invalid keyword argument".
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Optional, Dict, Any
-import random
-
+from sqlalchemy import desc
 from db import SessionLocal
 from models import Product
+from settings import settings
 
-from config import settings
-
-router = APIRouter(
-    prefix="/api/admin",
-    tags=["admin-products"],
-)
-
-# ==========================
-# Helpers internos
-# ==========================
+router = APIRouter(prefix="/api/admin", tags=["admin-products"])
 
 ADMIN_SECRET = settings.ADMIN_SECRET
 
 
-def check_secret(secret: str):
+# -------------------------
+# utils internos
+# -------------------------
+
+def ensure_secret(secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="No autorizado")
 
 
-def fake_ai_product_idea() -> Dict[str, Any]:
+def db_insert_draft(db: Session, idea: dict) -> Product:
     """
-    Simula una 'idea de producto' que la IA inventaría.
-    OJO: Puede incluir campos que NO existen realmente en la tabla.
-    Nosotros después filtramos solo lo que sí existe en Product.
+    Inserta un producto nuevo en estado draft usando SOLO columnas válidas.
     """
-
-    ideas = [
-        {
-            "title": "Mini ventilador USB silencioso",
-            "description": "Ventilador portátil silencioso para escritorio/home office.",
-            "image_url": "https://picsum.photos/seed/fan/800/800",
-            "price": 4990,
-            "currency": settings.CURRENCY,
-            "score": random.randint(70, 90),
-            "source_label": "ai_seed_v1",
-        },
-        {
-            "title": "Organizador plegable para clóset",
-            "description": "Cajón plegable apilable para ropa interior y accesorios.",
-            "image_url": "https://picsum.photos/seed/closet-box/800/800",
-            "price": 5990,
-            "currency": settings.CURRENCY,
-            "score": random.randint(70, 90),
-            "source_label": "ai_seed_v1",
-        },
-        {
-            "title": "Lámpara LED portátil recargable",
-            "description": "Luz cálida con batería USB-C, ideal camping / escritorio.",
-            "image_url": "https://picsum.photos/seed/lamp/800/800",
-            "price": 9990,
-            "currency": settings.CURRENCY,
-            "score": random.randint(70, 90),
-            "source_label": "ai_seed_v1",
-        },
-    ]
-    return random.choice(ideas)
-
-
-def db_insert_draft(db: Session, idea: Dict[str, Any]) -> Product:
-    """
-    Inserta un nuevo producto en estado 'draft'.
-
-    MUY IMPORTANTE:
-    SOLO pasamos a Product() las columnas que EXISTEN de verdad en tu tabla.
-
-    Error que viste:
-    TypeError: 'description' is an invalid keyword argument for Product
-    => significa que Product NO tiene columna 'description'.
-
-    Así que acá NO mandamos 'description'.
-    Tampoco mandamos short_bullets[], image_urls[], etc.
-    """
-
-    # Campos que sí sabemos que existen en tu DB por lo que vimos en /published y en los logs:
-    # - title
-    # - price
-    # - currency
-    # - image_url
-    # - status
-    # - score
-    # - source_label
-    #
-    # Lo que NO vamos a pasar:
-    # - description  (porque causó el TypeError)
-    # - short_bullets
-    # - image_urls
-    # etc.
-
     new_product = Product(
-        title=idea.get("title", None),
-        price=idea.get("price", 0),
-        currency=idea.get("currency", settings.CURRENCY),
-        image_url=idea.get("image_url", None),
+        title=idea["title"],                     # string NOT NULL
+        marketing_title=idea["marketing_title"],# nullable=True en modelo
+        description_long=idea["description_long"],
+        image_url=idea["image_url"],
+        price=idea["price"],
+        currency=idea["currency"],
         status="draft",
-        score=idea.get("score", 0),
-        source_label=idea.get("source_label", "ai_seed_v1"),
+        score=idea["score"],
+        source_label=idea["source_label"],
     )
-
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
     return new_product
 
 
-def publish_product_record(db: Session, p: Product, new_price: Optional[int] = None):
+def db_publish_product(db: Session, product_id: int, new_price: float):
     """
-    Marca un Product como 'published' y opcionalmente actualiza price.
+    Cambia un producto a 'published' y actualiza precio.
     """
+    p: Product | None = (
+        db.query(Product)
+        .filter(Product.id == product_id)
+        .first()
+    )
+
+    if not p:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
     p.status = "published"
-    if new_price is not None:
-        p.price = new_price
-    db.add(p)
+    p.price = new_price
     db.commit()
     db.refresh(p)
     return p
 
 
-# ==========================
-# Rutas Admin
-# ==========================
+def fake_ai_idea() -> dict:
+    """
+    Genera una "idea de producto" con texto más vendedor y datos coherentes.
+    Esto reemplaza la versión anterior que repetía el título y metía imágenes random.
+    """
 
+    # Podríamos tener varias plantillas y elegir una al azar en el futuro.
+    # De momento dejamos una sola "línea" estilo organizador de clóset.
+    # La idea es que marketing_title sea un título de venta corto,
+    # y description_long sea un pitch más humano.
+
+    marketing_title = "Organizador plegable premium para clóset (pack 2)"
+    internal_title = "Organizador plegable para clóset"  # este va en title (tu columna NOT NULL)
+
+    long_desc = (
+        "Mantén tu ropa y accesorios ordenados sin esfuerzo. "
+        "Este organizador plegable cabe en casi cualquier clóset y se arma en segundos. "
+        "Ideal para poleras, ropa interior o accesorios pequeños, "
+        "sin necesidad de instalación permanente."
+    )
+
+    # Imagen que al menos parezca producto hogareño / lifestyle
+    # picsum es random igual, pero usamos categorías más cálidas (interiores / hogar).
+    # Si quieres más control después podemos pasar a URLs propias subidas a Cloudinary o S3.
+    image_url = "https://picsum.photos/seed/closet-organizer/800/800"
+
+    idea = {
+        "title": internal_title,
+        "marketing_title": marketing_title,
+        "description_long": long_desc,
+        "image_url": image_url,
+        "price": 5990,
+        "currency": "CLP",
+        "score": 0.90,
+        "source_label": "ai_seed_v2",
+    }
+    return idea
+
+
+# -------------------------
+# Rutas
+# -------------------------
 
 @router.get("/debug_all")
 def debug_all(secret: str = Query(..., description="Admin token")):
     """
-    Devuelve TODO lo que haya en la tabla products, crudo.
-    Para debug en desarrollo.
+    Devuelve TODOS los productos (cuidado: muestra también draft).
+    Sirve solo para debugging.
     """
-    check_secret(secret)
+    ensure_secret(secret)
 
     with SessionLocal() as db:
-        rows = db.query(Product).order_by(Product.id.asc()).all()
+        rows = (
+            db.query(Product)
+            .order_by(desc(Product.id))
+            .all()
+        )
 
         out = []
         for p in rows:
-            out.append(
-                {
-                    "id": p.id,
-                    "title": getattr(p, "title", None),
-                    "status": getattr(p, "status", None),
-                    "price": getattr(p, "price", None),
-                    "currency": getattr(p, "currency", None),
-                    "image_url": getattr(p, "image_url", None),
-                    "score": getattr(p, "score", None),
-                    "source_label": getattr(p, "source_label", None),
-                }
-            )
+            out.append({
+                "id": p.id,
+                "title": p.title,
+                "marketing_title": p.marketing_title,
+                "status": p.status,
+                "price": p.price,
+                "currency": p.currency,
+                "image_url": p.image_url,
+                "score": p.score,
+                "source_label": p.source_label,
+            })
         return out
 
 
 @router.get("/seed_demo")
 def seed_demo(secret: str = Query(..., description="Admin token")):
     """
-    Inserta un producto de prueba en estado 'draft'.
-    Sirve para testear sin IA real.
+    Inserta un producto DEMO fijo como draft.
+    Pensado para probar rápido sin IA.
     """
-    check_secret(secret)
+    ensure_secret(secret)
 
-    idea = {
-        "title": "Menos dolor de cuello en 15 minutos frente al PC",
-        # "description": "...",  # <- no la usamos porque tu modelo no la soporta
-        "image_url": "https://picsum.photos/seed/demo-neck/800/800",
-        "price": 12990,
-        "currency": settings.CURRENCY,
-        "score": 80,
+    demo_idea = {
+        "title": "Lámpara LED portátil recargable",
+        "marketing_title": "Lámpara LED portátil recargable",
+        "description_long": (
+            "Iluminación donde quieras. Batería USB recargable, luz cálida "
+            "y formato compacto para velador, camping o escritorio."
+        ),
+        "image_url": "https://picsum.photos/seed/lampara-led/800/800",
+        "price": 9990,
+        "currency": "CLP",
+        "score": 0.8,
         "source_label": "manual_seed_v1",
     }
 
     with SessionLocal() as db:
-        p = db_insert_draft(db, idea)
+        new_p = db_insert_draft(db, demo_idea)
 
     return {
         "status": "ok",
         "message": "Draft creado",
-        "draft_id": p.id,
+        "draft_id": new_p.id,
     }
 
 
 @router.get("/drafts")
 def list_drafts(secret: str = Query(..., description="Admin token")):
     """
-    Devuelve solo los productos con estado 'draft'.
-    Esto lo va a usar tu dashboard admin.
+    Devuelve SOLO productos en estado 'draft'.
+    Esto es lo que un futuro dashboard admin va a listar.
     """
-    check_secret(secret)
+    ensure_secret(secret)
 
     with SessionLocal() as db:
         rows = (
             db.query(Product)
             .filter(Product.status == "draft")
-            .order_by(Product.id.asc())
+            .order_by(desc(Product.id))
             .all()
         )
 
         out = []
         for p in rows:
-            out.append(
-                {
-                    "id": p.id,
-                    "title_marketing": getattr(p, "title", None),
-                    "price": getattr(p, "price", None),
-                    "status": getattr(p, "status", None),
-                    "score": getattr(p, "score", None),
-                    "source_label": getattr(p, "source_label", None),
-                }
-            )
-
+            out.append({
+                "id": p.id,
+                "title": p.title,
+                "marketing_title": p.marketing_title,
+                "price": p.price,
+                "status": p.status,
+                "score": p.score,
+                "source_label": p.source_label,
+            })
         return out
 
 
 @router.patch("/products/{product_id}/publish")
-def publish_product_endpoint(
+def publish_product(
     product_id: int,
     secret: str = Query(..., description="Admin token"),
-    price: Optional[int] = Query(None, description="Nuevo precio público"),
+    price: float = Query(..., description="Nuevo precio público"),
 ):
     """
-    Cambia un producto a 'published' y ajusta precio.
+    Cambia un producto a 'published' y ajusta el precio.
     """
-    check_secret(secret)
+    ensure_secret(secret)
 
     with SessionLocal() as db:
-        p = (
-            db.query(Product)
-            .filter(Product.id == product_id)
-            .first()
-        )
+        p = db_publish_product(db, product_id, price)
 
-        if not p:
-            raise HTTPException(status_code=404, detail="Producto no existe")
-
-        publish_product_record(db, p, new_price=price)
-
-        return {
-            "status": "ok",
-            "message": "Producto publicado",
-            "id": p.id,
-            "new_price": p.price,
-        }
+    return {
+        "status": "ok",
+        "message": "Producto publicado",
+        "id": p.id,
+        "new_price": p.price,
+    }
 
 
 @router.post("/auto_generate")
@@ -256,38 +251,35 @@ def auto_generate(
     ),
 ):
     """
-    Genera un producto usando ideas simuladas de IA y lo guarda en la DB.
-    Si publish=True, lo marca como 'published'.
+    Genera un producto tipo IA y lo guarda en la DB.
+    Si publish=True lo deja como 'published'; si no, queda 'draft'.
 
     MUY IMPORTANTE:
-    - SOLO usamos columnas que EXISTEN en tu tabla 'products' para no chocar
-      con 'description', 'short_bullets', 'image_urls', etc.
-    - Rellenamos 'title' (que luego tu front trata como 'title_marketing').
+    - SOLO usamos columnas que EXISTEN en tu tabla 'products'; para no chocar con
+      columnas inexistentes tipo 'short_bullets[]', 'image_urls', etc.
+    - Rellenamos 'title' (que el front luego trata como 'title_marketing'),
+      'marketing_title', y 'description_long' con texto más humano.
     """
-    check_secret(secret)
+    ensure_secret(secret)
 
-    idea = fake_ai_product_idea()
+    idea = fake_ai_idea()
 
     with SessionLocal() as db:
-        # 1. Creamos el draft
-        p = db_insert_draft(db, idea)
+        new_p = db_insert_draft(db, idea)
 
-        # 2. ¿Publicarlo al tiro?
         if publish:
-            publish_product_record(db, p, new_price=idea.get("price"))
+            _ = db_publish_product(db, new_p.id, idea["price"])
 
-        # Previsualización para la respuesta
-        preview = {
-            "title_marketing": getattr(p, "title", None),
-            "price": getattr(p, "price", None),
-            "currency": getattr(p, "currency", settings.CURRENCY),
-            "status": getattr(p, "status", None),
-        }
-
-        return {
-            "status": "ok",
-            "id": p.id,
-            "published": p.status == "published",
-            "price": p.price,
-            "preview": preview,
-        }
+    # Devolvemos un preview cómodo pa debug
+    return {
+        "status": "ok",
+        "id": new_p.id,
+        "published": publish,
+        "price": idea["price"],
+        "preview": {
+            "marketing_title": idea["marketing_title"],
+            "price": idea["price"],
+            "currency": idea["currency"],
+            "status": "published" if publish else "draft",
+        },
+    }
