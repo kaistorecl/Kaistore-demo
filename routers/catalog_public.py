@@ -1,13 +1,19 @@
-# catalog_public.py
+# routers/catalog_public.py
 #
 # Endpoints públicos de catálogo.
 #
 # Paso A:
-#  - /products/published ahora convierte las columnas reales (title, description,
-#    image_url, price...) en el formato que el front espera
-#    (title_marketing, short_bullets[], image_urls[]).
+#  - /api/products/published convierte columnas reales de la tabla
+#    (title, description, image_url...) en el formato que espera el front:
+#    {
+#      title_marketing,
+#      short_bullets[],
+#      price,
+#      currency,
+#      image_urls[]
+#    }
 #
-# Así evitamos los null en la tienda.
+# Así evitamos null en la tienda.
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
