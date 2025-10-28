@@ -1,86 +1,94 @@
+# ai_products.py
+#
+# Generador FALSO de ideas de producto.
+# (No llama a ninguna IA real. Es pura lista estática + random.)
+#
+# IMPORTANTE:
+# - Mantener las claves: title_marketing, short_bullets, image_urls,
+#   price, currency. El resto del backend asume ese formato.
+
 import random
+from config import settings
+
+SAMPLE_IDEAS = [
+    {
+        "title_marketing": "Mini ventilador USB silencioso",
+        "short_bullets": [
+            "Enfría sin ruido en videollamadas o mientras duermes",
+            "Tres niveles de velocidad",
+            "Base ajustable 180°",
+            "Carga por USB-C",
+        ],
+        "price": 4990,
+        "currency": settings.CURRENCY,
+        "image_urls": [
+            "https://via.placeholder.com/800x800?text=ventilador-main",
+            "https://via.placeholder.com/800x800?text=ventilador-side",
+        ],
+    },
+    {
+        "title_marketing": "Organizador plegable para closet",
+        "short_bullets": [
+            "Ordena ropa y accesorios en segundos",
+            "Plegable y fácil de guardar",
+            "Tela reforzada de alta resistencia",
+            "Ideal para viajes o mudanzas",
+        ],
+        "price": 5990,
+        "currency": settings.CURRENCY,
+        "image_urls": [
+            "https://via.placeholder.com/800x800?text=closet-main",
+            "https://via.placeholder.com/800x800?text=closet-side",
+        ],
+    },
+    {
+        "title_marketing": "Lámpara LED portátil recargable",
+        "short_bullets": [
+            "Luz cálida para escritorio, velador o camping",
+            "Batería interna recargable",
+            "Brillo regulable con un toque",
+            "Liviana y fácil de llevar",
+        ],
+        "price": 9990,
+        "currency": settings.CURRENCY,
+        "image_urls": [
+            "https://via.placeholder.com/800x800?text=lamp-main",
+            "https://via.placeholder.com/800x800?text=lamp-side",
+        ],
+    },
+    {
+        "title_marketing": "Soporte lumbar para silla",
+        "short_bullets": [
+            "Mejora postura en teletrabajo",
+            "Malla transpirable 3D",
+            "Correas universales",
+            "Alivia zona baja de la espalda",
+        ],
+        "price": 7990,
+        "currency": settings.CURRENCY,
+        "image_urls": [
+            "https://via.placeholder.com/800x800?text=lumbar-main",
+            "https://via.placeholder.com/800x800?text=lumbar-side",
+        ],
+    },
+]
 
 
-def pick_idea():
+def generate_fake_product_idea():
     """
-    Devuelve una idea simulada de producto en formato dict.
-    Estas ideas las usa /api/admin/auto_generate para crear un draft.
+    Devuelve un dict con la forma que 'auto_generate' espera.
     """
+    idea = random.choice(SAMPLE_IDEAS)
 
-    ideas = [
-        {
-            "title_marketing": "Lámpara LED portátil recargable",
-            "short_bullets": [
-                "Luz potente para emergencia o camping",
-                "Batería USB recargable",
-                "Liviana y fácil de llevar",
-            ],
-            "price": 9990,
-            "currency": "CLP",
-            # usamos picsum (sirve como placeholder real, sí carga imagen)
-            "image_urls": [
-                "https://picsum.photos/seed/lampara-led/800/800"
-            ],
-            "score": 0.91,
-        },
-        {
-            "title_marketing": "Soporte lumbar para silla",
-            "short_bullets": [
-                "Mejora tu postura al trabajar",
-                "Malla transpirable 3D",
-                "Alivia zona baja de la espalda",
-            ],
-            "price": 7990,
-            "currency": "CLP",
-            "image_urls": [
-                "https://picsum.photos/seed/lumbar/800/800"
-            ],
-            "score": 0.88,
-        },
-        {
-            "title_marketing": "Almohada cervical ergonómica premium",
-            "short_bullets": [
-                "Reduce tensión en cuello en 15 minutos",
-                "Espuma memory foam de alta densidad",
-                "Ideal para escritorio y viajes",
-            ],
-            "price": 5990,
-            "currency": "CLP",
-            "image_urls": [
-                "https://picsum.photos/seed/cervical/800/800"
-            ],
-            "score": 0.86,
-        },
-        {
-            "title_marketing": "Mini ventilador USB silencioso",
-            "short_bullets": [
-                "Frescura directa en tu escritorio",
-                "Silencioso, ideal para videollamadas",
-                "Gira 360° y cabe en la mochila",
-            ],
-            "price": 4990,
-            "currency": "CLP",
-            "image_urls": [
-                "https://picsum.photos/seed/ventilador-usb/800/800"
-            ],
-            "score": 0.83,
-        },
-        {
-            "title_marketing": "Organizador plegable para closet",
-            "short_bullets": [
-                "Ahorra espacio y mantiene todo visible",
-                "Plegable, fácil de guardar",
-                "Perfecto para ropa interior y accesorios",
-            ],
-            "price": 5490,
-            "currency": "CLP",
-            "image_urls": [
-                "https://picsum.photos/seed/organizador/800/800"
-            ],
-            "score": 0.8,
-        },
-    ]
+    # Podríamos randomizar precio un poquito para que no todos salgan iguales
+    base_price = idea["price"]
+    wiggle = random.randint(-500, 500)
+    final_price = max(1000, base_price + wiggle)
 
-    # elegimos una idea random
-    idea = random.choice(ideas)
-    return idea
+    return {
+        "title_marketing": idea["title_marketing"],
+        "short_bullets": idea["short_bullets"],
+        "price": final_price,
+        "currency": idea["currency"],
+        "image_urls": idea["image_urls"],
+    }
