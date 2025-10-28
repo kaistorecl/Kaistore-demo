@@ -1,38 +1,29 @@
-import asyncio
 import os
-import random
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
 
-from db import Base, engine, SessionLocal
-import models  # registra Product y Order en Base.metadata
+from db import Base, engine
+import models  # asegura que Product/Order estén registradas en Base.metadata
 
-from routers import orders, payments
-from routers import catalog_public, admin_products
+from routers import (
+    catalog_public,   # /api/products/published, /api/products/{id}
+    admin_products,   # /api/admin/..., /api/admin/auto_generate, /publish
+    orders,           # /api/orders/checkout
+    payments,         # /api/payments/session/{session_id}, /webhook
+)
 
-from schemas import ProductIn
-from publishing import publish_product
-from config import settings
-
-
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # FastAPI app
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 app = FastAPI(
     title="Kaistore API + Front",
-    description="Catálogo dinámico + Checkout + Admin draft/publish",
+    description="Catálogo dinámico • Checkout • Admin draft/publish",
     version="0.2.0",
 )
 
-# servir archivos estáticos (CSS, img, etc.) desde /static/*
-# IMPORTANTE: necesita que exista la carpeta local ./static/
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# CORS abierto (sandbox)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,33 +32,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# -------------------------------------------------------------------
-# DB init al arrancar
-# -------------------------------------------------------------------
+# DB init
 @app.on_event("startup")
 def _init_db():
     Base.metadata.create_all(bind=engine)
 
+# Sirve /static/style.css (tu CSS del front)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# -------------------------------------------------------------------
-# Routers existentes (API pública, admin y pagos)
-# -------------------------------------------------------------------
-# catálogo público: /api/products/published , /api/products/{id}
-app.include_router(catalog_public.router)
-
-# admin: /api/admin/drafts , /api/admin/auto_generate , etc.
-app.include_router(admin_products.router)
-
-# checkout / pagos Stripe
-app.include_router(orders.router)
-app.include_router(payments.router)
+# Routers de API
+app.include_router(catalog_public.router)   # público
+app.include_router(admin_products.router)   # admin
+app.include_router(orders.router)           # órdenes / checkout
+app.include_router(payments.router)         # stripe webhooks / consulta pago
 
 
-# -------------------------------------------------------------------
-# Landing principal "/" = tienda reactiva en vanilla JS
-# (render HTML + usa /api/products/published vía fetch)
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Página principal (landing catálogo)
+# -----------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def home():
     return """
@@ -77,7 +59,9 @@ async def home():
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Kaistore • Demo</title>
+
 <link rel="stylesheet" href="/static/style.css"/>
+
 <style>
 body{
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -225,6 +209,7 @@ main.container{
     max-width:90%;
     text-align:center;
     line-height:1.4;
+    z-index:9999;
 }
 .toast.show{
     opacity:1;
@@ -289,6 +274,7 @@ function formatPrice(amount, currency){
     return fmt.format(value);
 }
 
+// 1. Traer productos publicados del backend
 async function fetchProducts(){
     console.log("→ GET /api/products/published");
     const res = await fetch("/api/products/published");
@@ -299,6 +285,7 @@ async function fetchProducts(){
     return await res.json();
 }
 
+// 2. Pintar las tarjetas en pantalla con tolerancia a datos nulos
 function render(products){
     if(!products || products.length === 0){
         $grid.innerHTML = `
@@ -310,9 +297,10 @@ function render(products){
 
     const term = ($q.value || "").toLowerCase().trim();
     const list = term
-        ? products.filter(p =>
-            (p.title_marketing || "").toLowerCase().includes(term)
-          )
+        ? products.filter(p => {
+            const t = (p.title_marketing || ("Producto #" + p.id)).toLowerCase();
+            return t.includes(term);
+        })
         : products;
 
     if(list.length === 0){
@@ -324,24 +312,40 @@ function render(products){
     }
 
     $grid.innerHTML = list.map(p => {
-        const img = (p.image_urls && p.image_urls[0])
-            ? p.image_urls[0]
-            : "https://via.placeholder.com/400x400?text=Producto";
+        // fallback de imagen
+        const safeImage = (
+            p.image_urls && Array.isArray(p.image_urls) && p.image_urls.length > 0
+                ? p.image_urls[0]
+                : "https://via.placeholder.com/400x400?text=Producto"
+        );
 
-        const bullet = (p.short_bullets && p.short_bullets.length > 0)
-            ? p.short_bullets[0]
-            : "";
+        // fallback de título
+        const safeTitle = p.title_marketing
+            ? p.title_marketing
+            : `Producto #${p.id}`;
 
+        // fallback de bullet/descripción corta
+        const safeBullet = (
+            p.short_bullets && Array.isArray(p.short_bullets) && p.short_bullets.length > 0
+                ? p.short_bullets[0]
+                : ""
+        );
+
+        // precio legible
         const priceText = formatPrice(p.price, p.currency);
 
         return `
         <div class="card">
             <div class="card-thumb">
-                <img src="${img}" alt="${p.title_marketing || "Producto"}"/>
+                <img src="${safeImage}" alt="${safeTitle}"/>
             </div>
             <div class="card-body">
-                <h2 class="card-title">${p.title_marketing || "Producto"}</h2>
-                <p class="card-desc">${bullet}</p>
+                <h2 class="card-title">${safeTitle}</h2>
+                ${
+                    safeBullet
+                        ? `<p class="card-desc">${safeBullet}</p>`
+                        : `<p class="card-desc" style="color:#666;">&nbsp;</p>`
+                }
                 <div class="card-price">${priceText}</div>
                 <button class="buy-btn" onclick="startCheckout(${p.id})">
                     Comprar ahora
@@ -352,6 +356,7 @@ function render(products){
     }).join("");
 }
 
+// 3. Checkout Stripe
 async function startCheckout(productId){
     try{
         const res = await fetch("/api/orders/checkout", {
@@ -380,6 +385,7 @@ async function startCheckout(productId){
     }
 }
 
+// 4. Flujo inicial
 (async function init(){
     $grid.innerHTML = `<div style="color:#9aa4b2; text-align:center; padding:3rem 1rem;">
         Cargando productos…
@@ -398,22 +404,23 @@ async function startCheckout(productId){
     }
 })();
 </script>
+
 </body>
 </html>
 """  # noqa: E501
 
 
-# -------------------------------------------------------------------
-# Healthcheck para monitoreo
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Healthcheck simple
+# -----------------------------------------------------------------------------
 @app.get("/api/health")
 async def health():
     return {"ok": True}
 
 
-# -------------------------------------------------------------------
-# Página de éxito post-pago (Stripe redirect success_url)
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Página de éxito post-checkout
+# -----------------------------------------------------------------------------
 @app.get("/success", response_class=HTMLResponse)
 async def success():
     return """
@@ -490,9 +497,9 @@ Consultando detalles de la orden...
 """  # noqa: E501
 
 
-# -------------------------------------------------------------------
-# Página de cancel post-pago (Stripe cancel_url)
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Página de cancelación
+# -----------------------------------------------------------------------------
 @app.get("/cancel", response_class=HTMLResponse)
 async def cancel():
     return """
@@ -504,66 +511,3 @@ async def cancel():
 </body>
 </html>
 """
-
-
-# -------------------------------------------------------------------
-# Autopublisher demo:
-# - mete productos candidatos automáticamente en la DB, publicados,
-#   usando publish_product() cada cierto rato.
-# -------------------------------------------------------------------
-CANDIDATES = [
-    ProductIn(
-        title="Llave ahorradora de agua 360°",
-        description="Cabezal giratorio que reduce consumo de agua hasta 30% y facilita limpieza.",
-        image_url="https://picsum.photos/seed/water/800/800",
-        price=5990.0,
-        currency=settings.CURRENCY,
-        score=88,
-        supplier_sku="AE-360-WATER",
-    ),
-    ProductIn(
-        title="Cepillo eléctrico multiuso para cocina",
-        description="Elimina grasa rápidamente; recargable USB; 3 cabezales.",
-        image_url="https://picsum.photos/seed/brush/800/800",
-        price=8490.0,
-        currency=settings.CURRENCY,
-        score=83,
-        supplier_sku="AE-BRUSH-USB",
-    ),
-    ProductIn(
-        title="Organizador plegable para ropa",
-        description="Orden instantáneo, ahorra espacio y mantiene tus prendas visibles.",
-        image_url="https://picsum.photos/seed/organizer/800/800",
-        price=4990.0,
-        currency=settings.CURRENCY,
-        score=79,
-        supplier_sku="AE-FOLD-BOX",
-    ),
-]
-
-
-async def auto_publisher():
-    # intenta publicar todos al inicio (pequeño delay para que la DB esté lista)
-    await asyncio.sleep(2)
-    with SessionLocal() as db:
-        for c in CANDIDATES:
-            try:
-                publish_product(db, c)
-            except Exception:
-                # si falla uno, seguimos con los otros
-                pass
-
-    # luego cada ~30 minutos inserta uno aleatorio
-    while True:
-        await asyncio.sleep(1800)
-        with SessionLocal() as db:
-            c = random.choice(CANDIDATES)
-            try:
-                publish_product(db, c)
-            except Exception:
-                pass
-
-
-@app.on_event("startup")
-async def _start_task():
-    asyncio.create_task(auto_publisher())
