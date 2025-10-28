@@ -1,106 +1,58 @@
-# routers/catalog_public.py
-# Catálogo público para la tienda:
-# - lista productos publicados
-# - detalle de un producto publicado
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any
-import json
 
-from db import get_db, get_published_products, get_product_by_id
+from db import get_db
+from models import Product  # asegúrate que Product tiene estas columnas
 
 router = APIRouter(
     prefix="/api/products",
-    tags=["products-public"]
+    tags=["products-public"],
 )
 
+
 @router.get("/published")
-def list_published_products(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
+def list_published_products(db: Session = Depends(get_db)):
     """
-    Devuelve todos los productos publicados, en formato seguro
-    para mostrar en la tienda (catálogo).
+    Devuelve todos los productos publicados, en formato seguro para mostrar en la tienda (catálogo).
     """
-    products = get_published_products(db)
+    rows = (
+        db.query(Product)
+        .filter(Product.status == "published")
+        .order_by(Product.id.desc())
+        .all()
+    )
 
     out = []
-    for p in products:
+    for p in rows:
         out.append({
             "id": p.id,
-            "title_marketing": p.marketing_title or p.title,
-            "short_bullets": _safe_json_list(p.bullets_json),
+            "title_marketing": getattr(p, "title_marketing", None),
+            "short_bullets": getattr(p, "short_bullets", None),
             "price": p.price,
             "currency": p.currency,
-            "image_urls": _safe_json_list(p.image_urls_json, fallback_single=p.image_url),
+            "image_urls": getattr(p, "image_urls", None),
         })
     return out
 
 
 @router.get("/{product_id}")
-def get_product_detail(product_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def get_product_detail(product_id: int, db: Session = Depends(get_db)):
     """
-    Devuelve el detalle completo de un producto publicado.
-    Esto alimenta la página de producto individual.
+    Detalle de un producto publicado (para página individual futura).
     """
-    p = get_product_by_id(db, product_id)
-    if not p or p.status != "published":
-        raise HTTPException(status_code=404, detail="Producto no encontrado o no publicado")
+    p = (
+        db.query(Product)
+        .filter(Product.id == product_id, Product.status == "published")
+        .first()
+    )
+    if not p:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
 
     return {
         "id": p.id,
-        "title_marketing": p.marketing_title or p.title,
-        "description_long": p.description_long,
-        "short_bullets": _safe_json_list(p.bullets_json),
-        "faq": _safe_json_faq(p.faq_json),
-        "risk_note": p.risk_note,
+        "title_marketing": getattr(p, "title_marketing", None),
+        "short_bullets": getattr(p, "short_bullets", None),
         "price": p.price,
         "currency": p.currency,
-        "image_urls": _safe_json_list(p.image_urls_json, fallback_single=p.image_url),
+        "image_urls": getattr(p, "image_urls", None),
     }
-
-
-# -------------------------------------------------
-# Helpers internos seguros (parsean JSON string)
-# -------------------------------------------------
-
-def _safe_json_list(raw: str, fallback_single: str = None):
-    """
-    Intenta parsear un string JSON que representa una lista de strings.
-    Si falla o está vacío:
-      - si fallback_single existe, devolvemos [fallback_single]
-      - si no, devolvemos []
-    """
-    if not raw:
-        return [fallback_single] if fallback_single else []
-    try:
-        data = json.loads(raw)
-        if isinstance(data, list):
-            return data
-        return []
-    except Exception:
-        return [fallback_single] if fallback_single else []
-
-
-def _safe_json_faq(raw: str):
-    """
-    Intenta parsear un string JSON de la forma:
-    '[{"q":"...","a":"..."}, {"q":"...","a":"..."}]'
-    Devuelve siempre una lista de dicts con q/a.
-    """
-    if not raw:
-        return []
-    try:
-        data = json.loads(raw)
-        if isinstance(data, list):
-            cleaned = []
-            for item in data:
-                if not isinstance(item, dict):
-                    continue
-                q = item.get("q")
-                a = item.get("a")
-                if q and a:
-                    cleaned.append({"q": q, "a": a})
-            return cleaned
-        return []
-    except Exception:
-        return []
