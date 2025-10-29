@@ -1,193 +1,210 @@
-// app.js
-// Frontend simple para la tienda
-// - carga productos publicados desde /api/products/published
-// - muestra cada producto en una card
-// - al hacer click en "Comprar ahora", crea una sesión de pago en Stripe
-//   llamando al backend /api/orders/checkout con el formato correcto
+// static/app.js
 
-// URL base del backend (tu Render)
-const API_BASE = "https://kaistore-demo.onrender.com/api";
-
-// contenedor donde van las cards
-const productsContainer = document.getElementById("products-container");
-
-// util: formatear CLP bonito
-function formatPriceCLP(value) {
-  // value viene como número (por ej 5990)
+// 1. Función para formatear CLP tipo "$5.990"
+function formatPriceCLP(num) {
+  // num viene como 5990 (float o int)
   try {
-    return new Intl.NumberFormat("es-CL", {
-      style: "currency",
-      currency: "CLP",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
+    const intVal = Math.round(Number(num));
+    return "$" + intVal.toLocaleString("es-CL");
   } catch (e) {
-    // fallback si Intl no pesca
-    return "$" + value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return "$" + num;
   }
 }
 
-// crea el HTML de UNA tarjeta de producto
-function renderProductCard(prod) {
-  // prod tiene este formato (desde /api/products/published):
+// 2. Renderizar UNA tarjeta de producto
+function renderProductCard(product) {
+  // product viene del backend /api/products/published
+  // Ejemplo:
   // {
   //   "id": 1,
-  //   "title_marketing": "Organizador...",
+  //   "title_marketing": "Organizador plegable premium...",
   //   "short_bullets": [],
   //   "price": 5990,
   //   "currency": "CLP",
-  //   "image_urls": ["https://..."]
+  //   "image_url": "https://...."
   // }
 
-  const title = prod.title_marketing || "Producto";
-  const desc =
-    prod.short_bullets && prod.short_bullets.length > 0
-      ? prod.short_bullets[0]
-      : prod.title_marketing || "";
-  const priceCLP = formatPriceCLP(prod.price || 0);
-
-  // imagen: usamos la primera si existe, si no un placeholder
-  let imgSrc =
-    (prod.image_urls && prod.image_urls[0]) ||
-    "https://via.placeholder.com/800x800?text=Producto";
-
-  // creamos elemento raíz
   const card = document.createElement("div");
-  card.className =
-    "product-card max-w-xl w-full bg-white border border-gray-200 rounded shadow flex flex-col overflow-hidden";
+  card.className = "product-card";
+  card.style.maxWidth = "700px";
+  card.style.width = "100%";
+  card.style.borderRadius = "8px";
+  card.style.overflow = "hidden";
+  card.style.border = "1px solid #e5e7eb";
+  card.style.boxShadow = "0 1px 2px rgb(0 0 0 / 0.05)";
+  card.style.backgroundColor = "#fff";
 
-  card.innerHTML = `
-    <img
-      src="${imgSrc}"
-      alt="${title}"
-      class="w-full h-auto object-cover"
-      style="aspect-ratio: 1/1; object-fit: cover;"
-    />
+  // imagen de producto
+  const img = document.createElement("img");
+  img.src = product.image_url || "https://via.placeholder.com/800x800?text=Producto";
+  img.alt = product.title_marketing || "Producto";
+  img.style.width = "100%";
+  img.style.height = "auto";
+  img.style.display = "block";
 
-    <div class="p-4 flex flex-col gap-2">
-      <div class="text-base font-semibold text-gray-900 leading-snug">
-        ${title}
-      </div>
-      <div class="text-sm text-gray-600 leading-snug">
-        ${desc}
-      </div>
-      <div class="text-sm font-bold text-gray-900">
-        ${priceCLP}
-      </div>
+  // contenedor info
+  const info = document.createElement("div");
+  info.style.padding = "16px";
+  info.style.borderTop = "1px solid #e5e7eb";
 
-      <button
-        class="checkout-btn w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 px-4 rounded-md transition-colors"
-        data-product-id="${prod.id}"
-      >
-        Comprar ahora
-      </button>
-    </div>
-  `;
+  // título principal (marketing/title)
+  const titleEl = document.createElement("div");
+  titleEl.style.fontSize = "16px";
+  titleEl.style.fontWeight = "600";
+  titleEl.style.color = "#111827";
+  titleEl.style.marginBottom = "6px";
+  titleEl.textContent = product.title_marketing || product.title || "Producto sin título";
 
-  // agregamos listener al botón "Comprar ahora"
-  const btn = card.querySelector(".checkout-btn");
-  btn.addEventListener("click", () => {
-    createCheckout(prod.id);
+  // descripción corta debajo del título
+  const descEl = document.createElement("div");
+  descEl.style.fontSize = "14px";
+  descEl.style.color = "#4b5563";
+  descEl.style.marginBottom = "8px";
+  // usamos title_marketing otra vez si no tenemos más texto
+  descEl.textContent =
+    product.title_marketing || product.title || "Descripción no disponible";
+
+  // precio
+  const priceEl = document.createElement("div");
+  priceEl.style.fontSize = "14px";
+  priceEl.style.fontWeight = "600";
+  priceEl.style.color = "#111827";
+  priceEl.style.marginBottom = "12px";
+  priceEl.textContent = formatPriceCLP(product.price || 0);
+
+  // botón comprar
+  const btn = document.createElement("button");
+  btn.className = "checkout-btn";
+  btn.style.width = "100%";
+  btn.style.display = "block";
+  btn.style.backgroundColor = "#1d4ed8";
+  btn.style.color = "#fff";
+  btn.style.fontSize = "14px";
+  btn.style.fontWeight = "500";
+  btn.style.padding = "10px 12px";
+  btn.style.border = "0";
+  btn.style.borderRadius = "4px";
+  btn.style.cursor = "pointer";
+  btn.style.textAlign = "center";
+  btn.textContent = "Comprar ahora";
+
+  // handler click -> llama /api/orders/checkout
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.style.opacity = "0.6";
+    btn.textContent = "Redirigiendo…";
+
+    try {
+      // armamos el payload como lo espera tu backend:
+      // Opción 1 soportada (por product_id):
+      // { "items": [ { "product_id": 3, "qty": 1 } ] }
+
+      const payload = {
+        items: [
+          {
+            product_id: product.id,
+            qty: 1,
+          },
+        ],
+      };
+
+      const resp = await fetch("/api/orders/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        // ejemplo 400 {detail:"JSON inválido"} u otro error
+        const errText = await resp.text();
+        alert("No se pudo iniciar el pago.\n" + errText);
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        btn.textContent = "Comprar ahora";
+        return;
+      }
+
+      // si OK, deberíamos recibir { "checkout_url": "https://checkout.stripe.com/..." }
+      const data = await resp.json();
+      if (data.checkout_url) {
+        // redirigimos a Stripe Checkout
+        window.location.href = data.checkout_url;
+      } else {
+        alert("No se recibió checkout_url desde el servidor.");
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        btn.textContent = "Comprar ahora";
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de red o JS al crear checkout.");
+      btn.disabled = false;
+      btn.style.opacity = "1";
+      btn.textContent = "Comprar ahora";
+    }
   });
+
+  // línea azul del botón separada con borde-top
+  const buttonWrapper = document.createElement("div");
+  buttonWrapper.style.borderTop = "1px solid #e5e7eb";
+  buttonWrapper.style.backgroundColor = "#eff6ff";
+  buttonWrapper.style.padding = "12px 16px";
+  buttonWrapper.appendChild(btn);
+
+  // metemos todo en la card
+  info.appendChild(titleEl);
+  info.appendChild(descEl);
+  info.appendChild(priceEl);
+
+  card.appendChild(img);
+  card.appendChild(info);
+  card.appendChild(buttonWrapper);
 
   return card;
 }
 
-// pide la lista de productos publicados al backend
+// 3. Cargar productos publicados
 async function loadProducts() {
+  const container = document.getElementById("products-container");
+  const loadingMsg = document.getElementById("loading-msg");
+
   try {
-    const res = await fetch(`${API_BASE}/products/published`, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-    });
+    const resp = await fetch("/api/products/published");
+    if (!resp.ok) {
+      throw new Error("No se pudo cargar catálogo (" + resp.status + ")");
+    }
+    const products = await resp.json();
 
-    if (!res.ok) {
-      console.error("Error cargando productos:", res.status, res.statusText);
-      productsContainer.innerHTML =
-        '<p style="color:red;">No se pudieron cargar los productos 😢</p>';
+    // limpiamos loading
+    if (loadingMsg) {
+      loadingMsg.remove();
+    }
+
+    if (!products || products.length === 0) {
+      const emptyMsg = document.createElement("div");
+      emptyMsg.style.color = "#6b7280";
+      emptyMsg.style.fontSize = "14px";
+      emptyMsg.style.textAlign = "center";
+      emptyMsg.textContent = "No hay productos publicados todavía.";
+      container.appendChild(emptyMsg);
       return;
     }
 
-    const data = await res.json();
-
-    // data debería ser un array tipo:
-    // [
-    //   {
-    //     "id": 1,
-    //     "title_marketing": "...",
-    //     "short_bullets": [],
-    //     "price": 5990,
-    //     "currency": "CLP",
-    //     "image_urls": ["https://..."]
-    //   }
-    // ]
-
-    productsContainer.innerHTML = ""; // limpio por si había algo
-
-    if (!Array.isArray(data) || data.length === 0) {
-      productsContainer.innerHTML =
-        '<p class="text-gray-500">No hay productos publicados aún 🙃</p>';
-      return;
-    }
-
-    data.forEach((prod) => {
-      const cardEl = renderProductCard(prod);
-      productsContainer.appendChild(cardEl);
+    // Pintamos cada producto
+    products.forEach((p) => {
+      const cardEl = renderProductCard(p);
+      container.appendChild(cardEl);
     });
   } catch (err) {
-    console.error("Excepción cargando productos:", err);
-    productsContainer.innerHTML =
-      '<p style="color:red;">Error al cargar productos 😢</p>';
+    console.error(err);
+    if (loadingMsg) {
+      loadingMsg.textContent =
+        "Error cargando productos. Intenta recargar la página.";
+    }
   }
 }
 
-// llama al backend para crear la sesión de checkout en Stripe
-async function createCheckout(productId) {
-  try {
-    // armamos el payload EXACTO que el backend espera:
-    // { "items": [ { "product_id": <id>, "qty": 1 } ] }
-    const payload = {
-      items: [
-        {
-          product_id: productId,
-          qty: 1,
-        },
-      ],
-    };
-
-    const res = await fetch(`${API_BASE}/orders/checkout`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      console.error("Error creando sesión de checkout:", res.status);
-      alert("No se pudo iniciar el pago 😢");
-      return;
-    }
-
-    // el backend debería responder algo como:
-    // { "checkout_url": "https://checkout.stripe.com/pay/..." }
-    const data = await res.json();
-
-    if (data && data.checkout_url) {
-      // redirigimos al checkout de Stripe
-      window.location.href = data.checkout_url;
-    } else {
-      console.error("Respuesta inesperada:", data);
-      alert("Hubo un problema creando el pago 😢");
-    }
-  } catch (err) {
-    console.error("Excepción creando checkout:", err);
-    alert("Error de red creando el pago 😢");
-  }
-}
-
-// cuando carga la página, traemos los productos
+// 4. ejecutar al cargar la página
 document.addEventListener("DOMContentLoaded", loadProducts);
