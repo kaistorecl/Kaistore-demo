@@ -4,12 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kaistore • Demo</title>
-
-  <!-- CSS -->
   <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}">
 </head>
 <body>
-  <!-- Barra superior -->
   <header class="topbar">
     <div class="status-dot"></div>
     <a class="brand" href="/">Kaistore • Demo</a>
@@ -21,37 +18,27 @@
       {% for p in products %}
         <article class="card">
           <img class="card-img" src="{{ p.image_url }}" alt="{{ p.title }}" loading="lazy" />
-
           <div class="card-body">
-            <h3 class="card-title">
-              {{ p.marketing_title or p.title }}
-            </h3>
-            {% if p.marketing_title %}
-              <p class="card-subtitle">{{ p.title }}</p>
-            {% endif %}
+            <h3 class="card-title">{{ p.marketing_title or p.title }}</h3>
+            {% if p.marketing_title %}<p class="card-subtitle">{{ p.title }}</p>{% endif %}
+            <div class="card-price">${{ '{:,.0f}'.format(p.price) | replace(',', '.') }}</div>
 
-            <div class="card-price">
-              ${{ '{:,.0f}'.format(p.price) | replace(',', '.') }}
-            </div>
-
-            <!-- Botón de compra: SIN id repetido. Usamos clase y data-attribute -->
             <button
               class="btn primary buy-btn"
               data-product-id="{{ p.id }}"
-            >
-              Comprar ahora
-            </button>
+              data-title="{{ p.title }}"
+              data-price="{{ p.price }}"
+              data-currency="{{ p.currency or 'CLP' }}"
+            >Comprar ahora</button>
           </div>
         </article>
       {% endfor %}
     {% else %}
       <p class="empty">No hay productos publicados.</p>
     {% endif %}
-
     <footer class="foot-note">Sandbox • Pagos de prueba en Stripe</footer>
   </main>
 
-  <!-- JS -->
   <script src="{{ request.url_for('static', path='app.js') }}" defer></script>
 </body>
 </html>
