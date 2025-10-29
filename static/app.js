@@ -117,14 +117,18 @@ function renderProductCard(product) {
       });
 
       if (!resp.ok) {
-        // ejemplo 400 {detail:"JSON inválido"} u otro error
-        const errText = await resp.text();
-        alert("No se pudo iniciar el pago.\n" + errText);
-        btn.disabled = false;
-        btn.style.opacity = "1";
-        btn.textContent = "Comprar ahora";
-        return;
-      }
+  const statusCode = resp.status;
+  const errText = await resp.text();
+  alert(
+    "Fallo al crear checkout:\n" +
+    "status=" + statusCode + "\n" +
+    "respuesta cruda:\n" + errText
+  );
+  btn.disabled = false;
+  btn.style.opacity = "1";
+  btn.textContent = "Comprar ahora";
+  return;
+}
 
       // si OK, deberíamos recibir { "checkout_url": "https://checkout.stripe.com/..." }
       const data = await resp.json();
