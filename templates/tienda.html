@@ -1,124 +1,57 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kaistore • Demo</title>
 
-  <!-- estilos básicos tailwind-ish (lo hacemos a mano con clases simples y style.css) -->
-  <link rel="stylesheet" href="/static/style.css" />
-
-  <style>
-    /* fallback por si falta algo en style.css */
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Inter", Roboto,
-        "Helvetica Neue", Arial, sans-serif;
-      background-color: #f9fafb;
-      color: #111827;
-      margin: 0;
-      padding: 0;
-    }
-
-    header {
-      background-color: #ffffff;
-      border-bottom: 1px solid #e5e7eb;
-      padding: 12px 16px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      color: #1f2937;
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      background-color: #10b981;
-      border-radius: 9999px;
-    }
-
-    .search-box {
-      border: 1px solid #d1d5db;
-      background-color: #fff;
-      border-radius: 6px;
-      padding: 8px 10px;
-      font-size: 14px;
-      min-width: 200px;
-      color: #374151;
-    }
-
-    main {
-      max-width: 768px;
-      margin: 24px auto 80px;
-      padding: 0 16px;
-    }
-
-    .footer-note {
-      text-align: center;
-      color: #6b7280;
-      font-size: 12px;
-      padding: 32px 0 64px;
-    }
-
-    /* card base (por si style.css no lo define igual) */
-    .product-card {
-      background-color: #fff;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
-    }
-
-    .checkout-btn {
-      cursor: pointer;
-    }
-  </style>
+  <!-- CSS -->
+  <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}">
 </head>
 <body>
-  <!-- barra superior -->
-  <header>
-    <div class="header-left">
-      <span class="status-dot"></span>
-      <span>Kaistore • Demo</span>
-    </div>
-
-    <input
-      class="search-box"
-      placeholder="Buscar productos…"
-      disabled
-    />
+  <!-- Barra superior -->
+  <header class="topbar">
+    <div class="status-dot"></div>
+    <a class="brand" href="/">Kaistore • Demo</a>
+    <input class="search" type="search" placeholder="Buscar productos…" disabled />
   </header>
 
-  <main>
-    <!-- acá el JS va a insertar las tarjetas de productos -->
-    <div
-      id="products-container"
-      class="flex flex-col items-center gap-6"
-      style="display: flex; flex-direction: column; align-items: center; gap: 24px;"
-    >
-      <!-- mientras carga -->
-      <div
-        style="color:#6b7280; font-size:14px; text-align:center;"
-        id="loading-msg"
-      >
-        Cargando productos…
-      </div>
-    </div>
+  <main class="container">
+    {% if products and products|length > 0 %}
+      {% for p in products %}
+        <article class="card">
+          <img class="card-img" src="{{ p.image_url }}" alt="{{ p.title }}" loading="lazy" />
 
-    <div class="footer-note">
-      Sandbox • Pagos de prueba en Stripe
-    </div>
+          <div class="card-body">
+            <h3 class="card-title">
+              {{ p.marketing_title or p.title }}
+            </h3>
+            {% if p.marketing_title %}
+              <p class="card-subtitle">{{ p.title }}</p>
+            {% endif %}
+
+            <div class="card-price">
+              ${{ '{:,.0f}'.format(p.price) | replace(',', '.') }}
+            </div>
+
+            <!-- Botón de compra: SIN id repetido. Usamos clase y data-attribute -->
+            <button
+              class="btn primary buy-btn"
+              data-product-id="{{ p.id }}"
+            >
+              Comprar ahora
+            </button>
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty">No hay productos publicados.</p>
+    {% endif %}
+
+    <footer class="foot-note">Sandbox • Pagos de prueba en Stripe</footer>
   </main>
 
-  <!-- nuestro JS nuevo -->
-  <script src="/static/app.js"></script>
+  <!-- JS -->
+  <script src="{{ request.url_for('static', path='app.js') }}" defer></script>
 </body>
 </html>
