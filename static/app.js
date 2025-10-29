@@ -1,54 +1,69 @@
 // static/app.js
-document.addEventListener("DOMContentLoaded", () => {
-  const buyBtn = document.getElementById("buyBtn");
+function toast(msg) {
+  try {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;z-index:9999;opacity:0.95';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3500);
+  } catch (_) { alert(msg); }
+}
 
-  function readProductId() {
-    const fromBtn = buyBtn?.getAttribute("data-product-id");
-    if (fromBtn) return Number(fromBtn);
-    const card = document.querySelector("[data-product-id]");
-    if (card) return Number(card.getAttribute("data-product-id"));
-    const el = document.getElementById("productId");
-    if (el && el.value) return Number(el.value);
-    return null;
-  }
+document.addEventListener('DOMContentLoaded', () => {
+  const buttons = document.querySelectorAll('.buy-btn');
 
-  async function createCheckoutSession(productId) {
-    // Si tu endpoint acepta "qty", usa este:
-    let body = { items: [{ product_id: Number(productId), qty: 1 }] };
-
-    // Si al probar te devuelve 400 JSON inválido, cambia a:
-    // body = { items: [{ product_id: Number(productId), quantity: 1 }] };
-
-    const resp = await fetch("/api/orders/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify(body)
-    });
-
-    const raw = await resp.text();
-    if (!resp.ok) throw new Error(`status=${resp.status} body=${raw}`);
-
-    let data = null;
-    try { data = JSON.parse(raw); } catch { throw new Error("Respuesta no-JSON: " + raw); }
-
-    const url = data.url || data.checkout_url;
-    if (!url) throw new Error("Backend no entregó URL de checkout: " + raw);
-    return url;
-  }
-
-  if (buyBtn) {
-    buyBtn.addEventListener("click", async () => {
-      buyBtn.disabled = true; buyBtn.style.opacity = "0.7"; buyBtn.textContent = "Procesando...";
+  buttons.forEach(btn => {
+    btn.addEventListener('click', async () => {
       try {
-        const productId = readProductId();
-        if (!productId) throw new Error("No se pudo determinar el product_id mostrado.");
-        const checkoutUrl = await createCheckoutSession(productId);
-        window.location.href = checkoutUrl;
+        // 1) Preferimos product_id + qty (lo que espera el API)
+        const pid = Number(btn.dataset.productId);
+        let payload;
+
+        if (Number.isFinite(pid) && pid > 0) {
+          payload = { items: [{ product_id: pid, qty: 1 }] };
+        } else {
+          // 2) Fallback: title/price/quantity/currency
+          const title = (btn.dataset.title || '').trim();
+          const price = Number(btn.dataset.price);
+          const currency = (btn.dataset.currency || 'CLP').trim();
+          if (!title || !Number.isFinite(price)) {
+            toast('No se pudo preparar el checkout (faltan datos).');
+            return;
+          }
+          payload = { items: [{ title, price, quantity: 1, currency }] };
+        }
+
+        // Llamada al backend
+        const res = await fetch('/api/orders/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const raw = await res.text();
+        let data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch { /* ignore */ }
+
+        if (!res.ok) {
+          const detail = data && (data.detail || data.message) ? `: ${data.detail || data.message}` : ` (HTTP ${res.status})`;
+          toast('No se pudo iniciar el pago' + detail);
+          console.error('Checkout error:', res.status, raw);
+          return;
+        }
+
+        if (!data || !data.url) {
+          toast('Respuesta inválida del backend (falta url).');
+          console.error('Respuesta sin url:', raw);
+          return;
+        }
+
+        // Redirigir a Stripe
+        window.location.href = data.url;
+
       } catch (err) {
-        alert("No se pudo iniciar el pago.\n" + (err?.message || err));
-      } finally {
-        buyBtn.disabled = false; buyBtn.style.opacity = "1"; buyBtn.textContent = "Comprar ahora";
+        console.error(err);
+        toast('Error de red al iniciar el pago.');
       }
     });
-  }
+  });
 });
