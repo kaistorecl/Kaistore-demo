@@ -25,9 +25,10 @@
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+
 from db import SessionLocal
 from models import Product
-from settings import settings
+from config import settings   # <-- ESTA es la línea corregida
 
 router = APIRouter(prefix="/api/admin", tags=["admin-products"])
 
