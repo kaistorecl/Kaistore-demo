@@ -1,115 +1,93 @@
-// app.js v12 – checkout robusto + debug visual
-
-const $ = (sel) => document.querySelector(sel);
-const productsEl = $("#products");
-const toast = $("#toast");
-
-function showToast(msg) {
-  toast.textContent = msg;
-  toast.style.display = "block";
-  setTimeout(() => (toast.style.display = "none"), 6000);
-}
-
-function setVersion(v) {
-  const el = document.getElementById("app-version");
-  if (el) el.textContent = `(${v})`;
-  document.title = `Kaistore • Demo ${v}`;
-}
-setVersion("v12");
+// static/app.js  v14
+const API = "/api";
 
 async function fetchJSON(url, opts = {}) {
-  const res = await fetch(url, opts);
-  let data = null;
-  try { data = await res.json(); } catch (_) {}
+  const res = await fetch(url, {
+    ...opts,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+  });
   if (!res.ok) {
-    const detail = data && (data.detail || JSON.stringify(data));
-    throw new Error(`HTTP ${res.status} ${res.statusText} :: ${detail || "sin detalle"}`);
+    let msg = "Error";
+    try { const j = await res.json(); msg = j.detail || JSON.stringify(j); } catch {}
+    throw new Error(msg);
   }
-  return data;
+  return res.json();
+}
+
+function formatCLP(value) {
+  try {
+    return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(value);
+  } catch {
+    return `$${value}`;
+  }
 }
 
 function productCard(p) {
-  return `
-  <article class="card">
-    <img src="${p.image_url}" alt="${p.title}" />
+  const img = p.image_url || p.image || "https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=1200";
+  const title = p.title || (p.preview && p.preview.marketing_title) || "Producto";
+  const price = p.price || (p.preview && p.preview.price) || 0;
+
+  const card = document.createElement("div");
+  card.className = "card";
+
+  card.innerHTML = `
+    <img class="card-img" src="${img}" alt="${title}">
     <div class="card-body">
-      <h3>${p.title}</h3>
-      <p class="subtitle">${p.marketing_title || ""}</p>
-      <div class="price">$${(p.price || 0).toLocaleString("es-CL")}</div>
-      <button class="btn-buy" data-id="${p.id}">Comprar ahora</button>
+      <h3 class="card-title">${title}</h3>
+      <p class="card-price">${formatCLP(price)}</p>
+      <button class="buy-btn" data-id="${p.id}">Comprar ahora</button>
     </div>
-  </article>`;
+  `;
+  card.querySelector(".buy-btn").addEventListener("click", () => startCheckout(p.id));
+  return card;
 }
 
-let PUBLISHED = [];
+async function startCheckout(productId) {
+  const btn = document.querySelector(`.buy-btn[data-id="${productId}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = "Redirigiendo…"; }
+  try {
+    // 👇 ESTE ES EL FORMATO QUE ESPERA TU API
+    const body = { items: [{ product_id: Number(productId), qty: 1 }] };
+    const data = await fetchJSON(`${API}/orders/checkout`, { method: "POST", body: JSON.stringify(body) });
+    if (data && data.url) {
+      window.location.href = data.url; // Stripe Checkout
+    } else {
+      throw new Error("Respuesta sin URL de pago");
+    }
+  } catch (err) {
+    console.error("Checkout error:", err);
+    toast("No se pudo iniciar el pago");
+    if (btn) { btn.disabled = false; btn.textContent = "Comprar ahora"; }
+  }
+}
+
+function toast(text) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = text;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
 
 async function loadProducts() {
-  const data = await fetchJSON("/api/products/published");
-  PUBLISHED = data || [];
-  if (!Array.isArray(PUBLISHED) || !PUBLISHED.length) {
-    productsEl.innerHTML = `<p style="opacity:.7">No hay productos publicados todavía 👋</p>`;
-    return;
+  const grid = document.getElementById("product-grid");
+  grid.innerHTML = '<div class="loading">Cargando…</div>';
+  try {
+    const products = await fetchJSON(`${API}/products/published`);
+    grid.innerHTML = "";
+    if (!products || !products.length) {
+      grid.innerHTML = `<p class="empty">No hay productos publicados todavía 👋</p>`;
+      return;
+    }
+    products.forEach((p) => grid.appendChild(productCard(p)));
+  } catch (err) {
+    console.error(err);
+    grid.innerHTML = `<p class="error">No se pudieron cargar los productos</p>`;
   }
-  productsEl.innerHTML = PUBLISHED.map(productCard).join("");
-  bindBuyButtons();
-}
-
-function bindBuyButtons() {
-  productsEl.querySelectorAll(".btn-buy").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = Number(btn.dataset.id);
-      btn.disabled = true;
-      btn.textContent = "Redirigiendo…";
-
-      try {
-        // INTENTO #1: por product_id/qty
-        const payload1 = { items: [{ product_id: id, qty: 1 }] };
-        const out1 = await fetchJSON("/api/orders/checkout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload1),
-        });
-        if (out1 && out1.url) {
-          window.location = out1.url;
-          return;
-        }
-        // Si no vino url, forzamos error para caer al catch
-        throw new Error(`Respuesta inesperada: ${JSON.stringify(out1)}`);
-      } catch (e1) {
-        // INTENTO #2 (fallback): enviar datos sueltos
-        try {
-          const p = PUBLISHED.find((x) => x.id === id);
-          if (!p) throw new Error("Producto no encontrado en memoria.");
-
-          const payload2 = {
-            items: [{
-              title: p.title,
-              price: p.price,
-              quantity: 1,
-              currency: p.currency || "CLP",
-            }],
-          };
-
-          const out2 = await fetchJSON("/api/orders/checkout", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload2),
-          });
-
-          if (out2 && out2.url) {
-            window.location = out2.url;
-            return;
-          }
-          throw new Error(`Respuesta inesperada: ${JSON.stringify(out2)}`);
-        } catch (e2) {
-          console.error("Checkout error:", e1, e2);
-          showToast(`No se pudo iniciar el pago: ${e2.message || e1.message}`);
-          btn.disabled = false;
-          btn.textContent = "Comprar ahora";
-        }
-      }
-    });
-  });
 }
 
 window.addEventListener("DOMContentLoaded", loadProducts);
