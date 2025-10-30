@@ -1,27 +1,29 @@
 <!doctype html>
 <html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Kaistore • Demo (v12)</title>
-  <link rel="stylesheet" href="/static/style.css" />
-</head>
-<body>
-  <header class="site-header">
-    <div class="dot online"></div>
-    <strong>Kaistore • Demo</strong>
-    <small id="app-version" style="opacity:.6;margin-left:.35rem"></small>
-    <input id="search" placeholder="Buscar productos…" />
-  </header>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Kaistore · Demo</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="dot dot-online"></span>
+        <strong>Kaistore</strong> · Demo
+      </div>
+      <input class="search" placeholder="Buscar productos…" />
+    </header>
 
-  <main>
-    <section id="products" class="grid"></section>
-    <p class="footer-note">Sandbox • Pagos de prueba en Stripe</p>
-  </main>
+    <main class="container">
+      <div id="product-grid" class="grid"></div>
+      <p class="footnote">Sandbox · Pagos de prueba en Stripe</p>
+    </main>
 
-  <div id="toast" class="toast" style="display:none"></div>
-
-  <!-- Cache buster v=12 para obligar a cargar el JS nuevo -->
-  <script src="/static/app.js?v=12"></script>
-</body>
+    <!-- Sube el número para romper caché si actualizas JS -->
+    <script src="/static/app.js?v=14"></script>
+  </body>
 </html>
