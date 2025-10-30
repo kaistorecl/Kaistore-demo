@@ -1,101 +1,115 @@
-// Helpers UI
+// app.js v12 – checkout robusto + debug visual
+
+const $ = (sel) => document.querySelector(sel);
+const productsEl = $("#products");
+const toast = $("#toast");
+
 function showToast(msg) {
-  // si tienes un toast propio, úsalo; aquí un alert no bloqueante simple
-  console.log("TOAST:", msg);
+  toast.textContent = msg;
+  toast.style.display = "block";
+  setTimeout(() => (toast.style.display = "none"), 6000);
 }
 
-function showDebug(obj) {
-  const el = document.getElementById("debug");
-  if (!el) return;
-  el.style.display = "block";
-  el.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+function setVersion(v) {
+  const el = document.getElementById("app-version");
+  if (el) el.textContent = `(${v})`;
+  document.title = `Kaistore • Demo ${v}`;
+}
+setVersion("v12");
+
+async function fetchJSON(url, opts = {}) {
+  const res = await fetch(url, opts);
+  let data = null;
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok) {
+    const detail = data && (data.detail || JSON.stringify(data));
+    throw new Error(`HTTP ${res.status} ${res.statusText} :: ${detail || "sin detalle"}`);
+  }
+  return data;
 }
 
-// Renderiza la grilla con los publicados
+function productCard(p) {
+  return `
+  <article class="card">
+    <img src="${p.image_url}" alt="${p.title}" />
+    <div class="card-body">
+      <h3>${p.title}</h3>
+      <p class="subtitle">${p.marketing_title || ""}</p>
+      <div class="price">$${(p.price || 0).toLocaleString("es-CL")}</div>
+      <button class="btn-buy" data-id="${p.id}">Comprar ahora</button>
+    </div>
+  </article>`;
+}
+
+let PUBLISHED = [];
+
 async function loadProducts() {
-  const grid = document.getElementById("grid");
-  grid.innerHTML = "<div class='loading'>Cargando…</div>";
+  const data = await fetchJSON("/api/products/published");
+  PUBLISHED = data || [];
+  if (!Array.isArray(PUBLISHED) || !PUBLISHED.length) {
+    productsEl.innerHTML = `<p style="opacity:.7">No hay productos publicados todavía 👋</p>`;
+    return;
+  }
+  productsEl.innerHTML = PUBLISHED.map(productCard).join("");
+  bindBuyButtons();
+}
 
-  try {
-    const r = await fetch("/api/products/published");
-    const items = await r.json();
+function bindBuyButtons() {
+  productsEl.querySelectorAll(".btn-buy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.dataset.id);
+      btn.disabled = true;
+      btn.textContent = "Redirigiendo…";
 
-    if (!Array.isArray(items) || items.length === 0) {
-      grid.innerHTML = "<p style='padding:16px'>No hay productos publicados.</p>";
-      return;
-    }
-
-    grid.innerHTML = items.map(p => {
-      const title = p.title || p.marketing_title || "Producto";
-      const subtitle = p.marketing_title || p.title || "";
-      const price = (p.price ?? 0).toLocaleString("es-CL");
-      const img = p.image_url || (p.image_urls && p.image_urls[0]) || "https://picsum.photos/seed/stock/1200/800";
-
-      return `
-        <article class="card">
-          <img src="${img}" alt="${title}" class="cover" />
-          <div class="card-body">
-            <h3>${title}</h3>
-            <p class="subtle">${subtitle}</p>
-            <div class="price">$${price}</div>
-            <button class="btn btn-primary buy-btn" data-product-id="${p.id}">Comprar ahora</button>
-          </div>
-        </article>
-      `;
-    }).join("");
-
-    // Wire botones
-    grid.querySelectorAll(".buy-btn").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const pid = btn.getAttribute("data-product-id");
-        if (!pid) {
-          showToast("No se encontró el product_id");
-          showDebug({ error: "botón sin data-product-id" });
+      try {
+        // INTENTO #1: por product_id/qty
+        const payload1 = { items: [{ product_id: id, qty: 1 }] };
+        const out1 = await fetchJSON("/api/orders/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload1),
+        });
+        if (out1 && out1.url) {
+          window.location = out1.url;
           return;
         }
-        await pay(pid);
-      });
+        // Si no vino url, forzamos error para caer al catch
+        throw new Error(`Respuesta inesperada: ${JSON.stringify(out1)}`);
+      } catch (e1) {
+        // INTENTO #2 (fallback): enviar datos sueltos
+        try {
+          const p = PUBLISHED.find((x) => x.id === id);
+          if (!p) throw new Error("Producto no encontrado en memoria.");
+
+          const payload2 = {
+            items: [{
+              title: p.title,
+              price: p.price,
+              quantity: 1,
+              currency: p.currency || "CLP",
+            }],
+          };
+
+          const out2 = await fetchJSON("/api/orders/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload2),
+          });
+
+          if (out2 && out2.url) {
+            window.location = out2.url;
+            return;
+          }
+          throw new Error(`Respuesta inesperada: ${JSON.stringify(out2)}`);
+        } catch (e2) {
+          console.error("Checkout error:", e1, e2);
+          showToast(`No se pudo iniciar el pago: ${e2.message || e1.message}`);
+          btn.disabled = false;
+          btn.textContent = "Comprar ahora";
+        }
+      }
     });
-  } catch (e) {
-    grid.innerHTML = "<p style='padding:16px'>Error cargando productos.</p>";
-    showDebug({ step: "loadProducts", error: String(e) });
-  }
+  });
 }
 
-// Llama al checkout con fallback por querystring (sin body)
-async function pay(productId) {
-  try {
-    const url = `/api/orders/checkout?product_id=${encodeURIComponent(productId)}&qty=1`;
-
-    const r = await fetch(url, { method: "POST" });
-    const contentType = r.headers.get("content-type") || "";
-
-    // Si viene JSON, parseamos; si no, leemos texto para depurar
-    let data = null;
-    if (contentType.includes("application/json")) {
-      data = await r.json();
-    } else {
-      const txt = await r.text();
-      data = { raw: txt };
-    }
-
-    if (!r.ok) {
-      showToast("No se pudo iniciar el pago");
-      showDebug({ step: "checkout", status: r.status, url, response: data });
-      return;
-    }
-
-    if (data && data.url) {
-      window.location.href = data.url;
-      return;
-    }
-
-    showToast("Respuesta inesperada del servidor");
-    showDebug({ step: "checkout", status: r.status, url, response: data });
-  } catch (e) {
-    showToast("No se pudo iniciar el pago");
-    showDebug({ step: "checkout-catch", error: String(e) });
-  }
-}
-
-document.addEventListener("DOMContentLoaded", loadProducts);
+window.addEventListener("DOMContentLoaded", loadProducts);
