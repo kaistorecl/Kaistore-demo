@@ -4,41 +4,29 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kaistore • Demo</title>
-  <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}">
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="status-dot"></div>
-    <a class="brand" href="/">Kaistore • Demo</a>
-    <input class="search" type="search" placeholder="Buscar productos…" disabled />
+  <header class="site-header">
+    <div class="brand-dot"></div>
+    <div class="brand">Kaistore • <span>Demo</span></div>
+    <div class="search">
+      <input id="search" placeholder="Buscar productos…" />
+    </div>
   </header>
 
   <main class="container">
-    {% if products and products|length > 0 %}
-      {% for p in products %}
-        <article class="card">
-          <img class="card-img" src="{{ p.image_url }}" alt="{{ p.title }}" loading="lazy" />
-          <div class="card-body">
-            <h3 class="card-title">{{ p.marketing_title or p.title }}</h3>
-            {% if p.marketing_title %}<p class="card-subtitle">{{ p.title }}</p>{% endif %}
-            <div class="card-price">${{ '{:,.0f}'.format(p.price) | replace(',', '.') }}</div>
+    <div id="grid" class="product-grid"></div>
 
-            <button
-              class="btn primary buy-btn"
-              data-product-id="{{ p.id }}"
-              data-title="{{ p.title }}"
-              data-price="{{ p.price }}"
-              data-currency="{{ p.currency or 'CLP' }}"
-            >Comprar ahora</button>
-          </div>
-        </article>
-      {% endfor %}
-    {% else %}
-      <p class="empty">No hay productos publicados.</p>
-    {% endif %}
-    <footer class="foot-note">Sandbox • Pagos de prueba en Stripe</footer>
+    <!-- Debug (temporal): se muestra solo si hay error -->
+    <pre id="debug" style="display:none;padding:12px;background:#111;color:#0f0;border-radius:8px;overflow:auto"></pre>
   </main>
 
-  <script src="{{ request.url_for('static', path='app.js') }}" defer></script>
+  <footer class="site-footer">
+    <small>Sandbox • Pagos de prueba en Stripe</small>
+  </footer>
+
+  <!-- Cache-buster para forzar el JS nuevo -->
+  <script src="/static/app.js?b=7"></script>
 </body>
 </html>
