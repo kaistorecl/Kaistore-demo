@@ -1,133 +1,98 @@
-# routers/orders.py
-from fastapi import APIRouter, Request, HTTPException
+# routers/orders.py  (v4)
+
+from fastapi import APIRouter, HTTPException, Request
+from sqlalchemy.orm import Session
+import stripe
+
 from db import SessionLocal
 from models import Product
-from config import settings   # <- en tu repo es config.py, por eso importamos así
-import stripe
+from settings import settings
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
-@router.post("/checkout", summary="Create Checkout Session")
-async def create_checkout(request: Request):
-    """
-    Acepta:
-      - {"items":[{"product_id": 1, "qty": 1}]}
-      - {"items":[{"title":"...", "price":4990, "quantity":1, "currency":"CLP"}]}
+# Configura Stripe una sola vez
+stripe.api_key = settings.STRIPE_SECRET_KEY
 
-    Fallback (para Swagger cuando no deja editar body):
-      /api/orders/checkout?product_id=1&qty=1
-    """
-    # 1) Intentar leer JSON
+def _build_line_item_from_product(db: Session, product_id: int, qty: int = 1) -> dict:
+    p = (
+        db.query(Product)
+        .filter(Product.id == product_id, Product.status == "published")
+        .first()
+    )
+    if not p:
+        raise HTTPException(status_code=404, detail="Producto no encontrado o no publicado")
+    currency = (p.currency or settings.CURRENCY or "clp").lower()
+    price = int(p.price)  # CLP es moneda sin decimales
+    title = p.title
+
+    return {
+        "price_data": {
+            "currency": currency,
+            "product_data": {"name": title},
+            "unit_amount": price,
+        },
+        "quantity": int(qty or 1),
+    }
+
+def _build_line_item_from_loose(it: dict) -> dict:
     try:
-        payload = await request.json()
-        if not isinstance(payload, dict):
-            payload = None
+        title = str(it["title"])
+        price = int(it["price"])
     except Exception:
-        payload = None
+        raise HTTPException(status_code=422, detail="items[].title y items[].price son obligatorios")
 
-    # 2) Fallback desde query params si no vino JSON
-    if not payload or "items" not in payload:
-        qp = request.query_params
-        if "product_id" in qp:
-            try:
-                pid = int(qp["product_id"])
-                qty = int(qp.get("qty", "1"))
-                payload = {"items": [{"product_id": pid, "qty": qty}]}
-            except Exception:
-                raise HTTPException(status_code=400, detail="JSON inválido")
-        else:
-            raise HTTPException(status_code=400, detail="JSON inválido")
+    qty = int(it.get("quantity", 1))
+    currency = str(it.get("currency", settings.CURRENCY or "clp")).lower()
 
-    items = payload.get("items", [])
-    if not isinstance(items, list) or not items:
-        raise HTTPException(status_code=400, detail="JSON inválido: 'items' vacío")
+    return {
+        "price_data": {
+            "currency": currency,
+            "product_data": {"name": title},
+            "unit_amount": price,
+        },
+        "quantity": qty,
+    }
 
-    # 3) Preparar line_items para Stripe
+@router.post("/checkout")
+async def create_checkout_session(req: Request):
+    # 1) Lee el JSON
+    try:
+        payload = await req.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not items or not isinstance(items, list):
+        raise HTTPException(status_code=422, detail="items[] requerido")
+
+    # 2) Construye line_items
     line_items = []
     with SessionLocal() as db:
         for it in items:
-            # Caso A: por product_id
             if isinstance(it, dict) and "product_id" in it:
-                pid = int(it["product_id"])
-                qty = int(it.get("qty") or it.get("quantity") or 1)
-
-                p = (
-                    db.query(Product)
-                    .filter(Product.id == pid, Product.status == "published")
-                    .first()
-                )
-                if not p:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Producto {pid} no encontrado/publicado",
+                line_items.append(
+                    _build_line_item_from_product(
+                        db,
+                        int(it["product_id"]),
+                        int(it.get("qty", 1)),
                     )
-
-                line_items.append(
-                    {
-                        "price_data": {
-                            "currency": (p.currency or settings.CURRENCY).lower(),
-                            "product_data": {"name": p.title},
-                            "unit_amount": int(float(p.price)) * 100,
-                        },
-                        "quantity": qty,
-                    }
-                )
-            # Caso B: datos sueltos
-            elif isinstance(it, dict) and "title" in it and "price" in it:
-                qty = int(it.get("quantity") or it.get("qty") or 1)
-                currency = (it.get("currency") or settings.CURRENCY).lower()
-                line_items.append(
-                    {
-                        "price_data": {
-                            "currency": currency,
-                            "product_data": {"name": it["title"]},
-                            "unit_amount": int(float(it["price"])) * 100,
-                        },
-                        "quantity": qty,
-                    }
                 )
             else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "JSON inválido: cada item debe tener "
-                        "product_id/qty o title/price/quantity/currency"
-                    ),
-                )
+                line_items.append(_build_line_item_from_loose(it))
 
-    if not line_items:
-        raise HTTPException(status_code=400, detail="No hay items válidos")
-
-    # 4) Crear sesión de pago en Stripe
+    # 3) Crea la sesión de Stripe
     try:
-        stripe.api_key = settings.STRIPE_SECRET_KEY
-        success_url = f"{settings.WEB_URL}/success?session_id={{CHECKOUT_SESSION_ID}}"
-        cancel_url = f"{settings.WEB_URL}/cancel"
-
         session = stripe.checkout.Session.create(
             mode="payment",
+            payment_method_types=["card"],
             line_items=line_items,
-            success_url=success_url,
-            cancel_url=cancel_url,
+            success_url=f"{settings.WEB_URL}/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{settings.WEB_URL}/cancel",
         )
-        return {"url": session.url}
-    except Exception as e:
-        print("Stripe error:", repr(e))
-        raise HTTPException(status_code=500, detail="Error al crear sesión de pago")
+    except stripe.error.StripeError as e:
+        # Mensaje claro para debug
+        msg = getattr(e, "user_message", None) or str(e)
+        raise HTTPException(status_code=400, detail=f"Stripe: {msg}")
 
-
-@router.get("/{session_id}", summary="Get Order (Stripe session)")
-def get_order(session_id: str):
-    """Devuelve info básica de la sesión (útil para depurar)."""
-    try:
-        stripe.api_key = settings.STRIPE_SECRET_KEY
-        s = stripe.checkout.Session.retrieve(session_id)
-        return {
-            "id": s.id,
-            "status": s.status,
-            "amount_total": s.amount_total,
-            "currency": s.currency,
-            "payment_status": s.payment_status,
-        }
-    except Exception:
-        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    # 4) Devuelve URL para redirigir desde el front
+    return {"url": session.url}
