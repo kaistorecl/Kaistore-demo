@@ -1,93 +1,96 @@
-# routers/orders.py  (v4.1)
-
-from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy.orm import Session
-import os, stripe
-
-from db import SessionLocal
-from models import Product
-
-# ---- Carga settings desde config.py o desde variables de entorno ----
-try:
-    from config import settings  # <— tu proyecto tiene config.py
-    STRIPE_SECRET_KEY = settings.STRIPE_SECRET_KEY
-    WEB_URL = settings.WEB_URL
-    DEFAULT_CURRENCY = (getattr(settings, "CURRENCY", "clp") or "clp").lower()
-except Exception:
-    STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
-    WEB_URL = os.getenv("WEB_URL", "http://localhost:8000")
-    DEFAULT_CURRENCY = (os.getenv("CURRENCY", "clp") or "clp").lower()
+# routers/orders.py
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field, validator
+from typing import List, Optional
+import os
+import stripe
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
-stripe.api_key = STRIPE_SECRET_KEY
 
-def _cur(value):  # normaliza moneda
-    return (value or DEFAULT_CURRENCY).lower()
+# --- Config ---
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
+WEB_URL = os.getenv("WEB_URL", "http://localhost:8000").rstrip("/")
+DEFAULT_CURRENCY = os.getenv("CURRENCY", "clp").lower()
 
-def _li_from_product(db: Session, product_id: int, qty: int = 1) -> dict:
-    p = (
-        db.query(Product)
-        .filter(Product.id == product_id, Product.status == "published")
-        .first()
-    )
-    if not p:
-        raise HTTPException(status_code=404, detail="Producto no encontrado o no publicado")
-    return {
-        "price_data": {
-            "currency": _cur(getattr(p, "currency", DEFAULT_CURRENCY)),
-            "product_data": {"name": p.title},
-            "unit_amount": int(p.price),  # CLP sin decimales
-        },
-        "quantity": int(qty or 1),
-    }
+if not STRIPE_SECRET_KEY:
+    # No lanzamos error al importar para no romper startup; validamos en runtime
+    pass
+else:
+    stripe.api_key = STRIPE_SECRET_KEY
 
-def _li_from_loose(it: dict) -> dict:
-    if not isinstance(it, dict):
-        raise HTTPException(status_code=422, detail="items[] debe ser objeto")
-    if "title" not in it or "price" not in it:
-        raise HTTPException(status_code=422, detail="items[].title y items[].price son obligatorios")
-    return {
-        "price_data": {
-            "currency": _cur(it.get("currency")),
-            "product_data": {"name": str(it["title"])},
-            "unit_amount": int(it["price"]),
-        },
-        "quantity": int(it.get("quantity", 1)),
-    }
 
+# --- Modelos ---
+class CheckoutItem(BaseModel):
+    title: str = Field(..., description="Nombre del producto")
+    price: int = Field(..., ge=0, description="Precio en CLP, sin puntos")
+    quantity: int = Field(1, ge=1)
+    currency: Optional[str] = Field(None, description="Código de moneda (ej. clp)")
+    image_url: Optional[str] = None
+
+    @validator("currency", pre=True, always=True)
+    def _currency_lower_or_default(cls, v):
+        return (v or DEFAULT_CURRENCY).lower()
+
+
+class CheckoutRequest(BaseModel):
+    items: List[CheckoutItem]
+
+
+# --- Endpoints ---
 @router.post("/checkout")
-async def checkout(req: Request):
-    # 1) leer body
-    try:
-        payload = await req.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="JSON inválido")
+def create_checkout_session(body: CheckoutRequest):
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe no configurado (STRIPE_SECRET_KEY)")
 
-    items = payload.get("items") if isinstance(payload, dict) else None
-    if not items or not isinstance(items, list):
-        raise HTTPException(status_code=422, detail="items[] requerido")
+    if not body.items:
+        raise HTTPException(status_code=422, detail="Debe enviar al menos un ítem")
 
-    # 2) construir line_items
     line_items = []
-    with SessionLocal() as db:
-        for it in items:
-            if isinstance(it, dict) and "product_id" in it:
-                line_items.append(_li_from_product(db, int(it["product_id"]), int(it.get("qty", 1))))
-            else:
-                line_items.append(_li_from_loose(it))
+    for it in body.items:
+        # Stripe espera centavos: CLP no tiene decimales, pero igual multiplicamos por 100 (recomendado)
+        unit_amount = int(it.price) * 100
+        product_data = {"name": it.title}
+        if it.image_url:
+            product_data["images"] = [it.image_url]
 
-    # 3) crear sesión de Stripe
+        line_items.append(
+            {
+                "price_data": {
+                    "currency": it.currency,           # <--- ya en minúsculas
+                    "product_data": product_data,
+                    "unit_amount": unit_amount,
+                },
+                "quantity": it.quantity,
+            }
+        )
+
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
-            payment_method_types=["card"],
             line_items=line_items,
             success_url=f"{WEB_URL}/success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{WEB_URL}/cancel",
         )
+        return {"id": session.id, "url": session.url}
     except stripe.error.StripeError as e:
-        msg = getattr(e, "user_message", None) or str(e)
-        raise HTTPException(status_code=400, detail=f"Stripe: {msg}")
+        # Exponemos un mensaje controlado
+        raise HTTPException(status_code=400, detail=f"Stripe error: {getattr(e, 'user_message', str(e))}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creando checkout: {str(e)}")
 
-    # 4) devolver URL para redirección
-    return {"url": session.url}
+
+@router.get("/{session_id}")
+def get_order(session_id: str):
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe no configurado (STRIPE_SECRET_KEY)")
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+        return {
+            "id": session.id,
+            "payment_status": session.get("payment_status"),
+            "status": session.get("status"),
+            "amount_total": session.get("amount_total"),
+            "currency": session.get("currency"),
+        }
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=f"Stripe error: {getattr(e, 'user_message', str(e))}")
