@@ -1,102 +1,107 @@
-// static/app.js  v16
-console.log("static/app.js v16");
+// static/app.js
+// Front de la tienda: lista productos y abre Stripe Checkout
 
-const $ = (sel, p = document) => p.querySelector(sel);
-const $$ = (sel, p = document) => [...p.querySelectorAll(sel)];
+const API_BASE = '/api';
 
-const API = {
-  list: async () => {
-    const r = await fetch('/api/products/published', { headers: { 'accept': 'application/json' }});
-    if (!r.ok) throw new Error('No se pudo listar productos');
-    return r.json();
-  },
-  checkout: async (items) => {
-    const payload = { items }; // formato suelto: [{ title, price, quantity, currency }]
-    const r = await fetch('/api/orders/checkout', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'accept': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (!r.ok) {
-      const txt = await r.text().catch(()=> '');
-      throw new Error(`Checkout falló (${r.status}): ${txt || 'respuesta no válida'}`);
-    }
-    return r.json();
+function formatCLP(v) {
+  try {
+    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(v);
+  } catch {
+    return `$${(v || 0).toLocaleString('es-CL')}`;
   }
-};
-
-function cardHTML(p) {
-  const img = p.image_url || 'https://picsum.photos/seed/kaistore/800/600';
-  const title = p.marketing_title || p.title || 'Producto';
-  const price = Number(p.price || 0);
-  const currency = p.currency || 'clp';
-  return `
-    <article class="card">
-      <img src="${img}" alt="${title}">
-      <div class="bx">
-        <h3 style="margin:0 0 6px 0">${title}</h3>
-        <p class="muted" style="margin:0 0 10px 0">${title}</p>
-        <div style="font-weight:700;margin-bottom:10px">$${price.toLocaleString('es-CL')}</div>
-        <button class="btn buy"
-          data-title="${title.replace(/"/g,'&quot;')}"
-          data-price="${price}"
-          data-currency="${currency}">Comprar ahora (v16)</button>
-      </div>
-    </article>
-  `;
 }
 
-async function mount() {
+function toast(msg) {
+  // Aviso simple abajo (sin dependencias)
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = `
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+    background: rgba(0,0,0,.85); color: #fff; padding: 10px 14px; border-radius: 8px;
+    font-size: 14px; z-index: 9999;
+  `;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+async function fetchJSON(url, opts = {}) {
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+function productCard(p) {
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  card.innerHTML = `
+    <img class="card-img" src="${p.image_url || '/static/placeholder.jpg'}" alt="${p.marketing_title || 'Producto'}" />
+    <div class="card-body">
+      <h3 class="card-title">${p.marketing_title || p.title || 'Producto'}</h3>
+      <p class="card-desc">${p.short_benefit || p.description || ''}</p>
+      <div class="card-price">${formatCLP(p.price || 0)}</div>
+      <button class="btn-primary">Comprar ahora</button>
+    </div>
+  `;
+
+  const btn = card.querySelector('button');
+  btn.addEventListener('click', async () => {
+    try {
+      btn.disabled = true;
+      btn.textContent = 'Redirigiendo…';
+
+      // SIEMPRE enviamos 'clp' en minúsculas a Stripe
+      const payload = {
+        items: [
+          {
+            title: p.marketing_title || p.title || 'Producto',
+            price: Number(p.price || 0),
+            quantity: 1,
+            currency: 'clp',
+            image_url: p.image_url || null,
+          },
+        ],
+      };
+
+      const data = await fetchJSON(`${API_BASE}/orders/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (data && data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error('sin_url');
+      }
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo iniciar el pago');
+      btn.disabled = false;
+      btn.textContent = 'Comprar ahora';
+    }
+  });
+
+  return card;
+}
+
+async function loadProducts() {
+  const grid = document.getElementById('products');
+  grid.innerHTML = '<div class="grid-empty">Cargando…</div>';
+
   try {
-    const data = await API.list();
-    const grid = $('#products');
-    if (!data || data.length === 0) {
-      $('#empty').style.display = 'block';
+    const items = await fetchJSON(`${API_BASE}/products/published`);
+    grid.innerHTML = '';
+    if (!items || !items.length) {
+      grid.innerHTML = '<div class="grid-empty">No hay productos publicados todavía 👋</div>';
       return;
     }
-    grid.innerHTML = data.map(cardHTML).join('');
-
-    // Buscar
-    $('#q').addEventListener('input', (e) => {
-      const q = e.target.value.toLowerCase();
-      $$('.card').forEach(c => {
-        const t = $('.bx h3', c).textContent.toLowerCase();
-        c.style.display = t.includes(q) ? '' : 'none';
-      });
-    });
-
-    // Delegación de eventos para comprar
-    grid.addEventListener('click', async (ev) => {
-      const btn = ev.target.closest('.buy');
-      if (!btn) return;
-
-      btn.disabled = true; btn.textContent = 'Creando pago…';
-      try {
-        // Usamos el formato “datos sueltos” que tu API acepta:
-        const item = {
-          title: btn.dataset.title,
-          price: Number(btn.dataset.price),
-          quantity: 1,
-          currency: btn.dataset.currency || 'CLP'
-        };
-        const res = await API.checkout([item]);
-        if (res && res.url) {
-          location.href = res.url; // redirige a Stripe
-        } else {
-          throw new Error('La API no devolvió URL de pago');
-        }
-      } catch (err) {
-        console.error(err);
-        alert('No se pudo iniciar el pago: ' + err.message);
-      } finally {
-        btn.disabled = false; btn.textContent = 'Comprar ahora (v16)';
-      }
-    });
-
+    items.forEach((p) => grid.appendChild(productCard(p)));
   } catch (e) {
     console.error(e);
-    alert('Error cargando tienda: ' + e.message);
+    document.getElementById('products').innerHTML =
+      '<div class="grid-empty">Error cargando productos</div>';
   }
 }
 
-document.addEventListener('DOMContentLoaded', mount);
+document.addEventListener('DOMContentLoaded', loadProducts);
