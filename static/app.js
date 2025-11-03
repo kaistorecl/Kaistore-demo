@@ -1,93 +1,102 @@
-// static/app.js  v15
-const API = "/api";
+// static/app.js  v16
+console.log("static/app.js v16");
 
-async function fetchJSON(url, opts = {}) {
-  const res = await fetch(url, {
-    ...opts,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(opts.headers || {}),
-    },
-  });
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try {
-      const j = await res.json();
-      msg = j.detail || JSON.stringify(j);
-    } catch {}
-    throw new Error(msg);
-  }
-  return res.json();
-}
+const $ = (sel, p = document) => p.querySelector(sel);
+const $$ = (sel, p = document) => [...p.querySelectorAll(sel)];
 
-function formatCLP(v) {
-  try {
-    return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(v);
-  } catch { return `$${v}`; }
-}
-
-function productCard(p) {
-  const img = p.image_url || p.image || "https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=1200";
-  const title = p.title || (p.preview && p.preview.marketing_title) || "Producto";
-  const price = p.price || (p.preview && p.preview.price) || 0;
-
-  const el = document.createElement("div");
-  el.className = "card";
-  el.innerHTML = `
-    <img class="card-img" src="${img}" alt="${title}">
-    <div class="card-body">
-      <h3 class="card-title">${title}</h3>
-      <p class="card-price">${formatCLP(price)}</p>
-      <button class="buy-btn" data-id="${p.id}">Comprar ahora (v15)</button>
-    </div>
-  `;
-  el.querySelector(".buy-btn").addEventListener("click", () => startCheckout(p.id));
-  return el;
-}
-
-async function startCheckout(productId) {
-  const btn = document.querySelector(`.buy-btn[data-id="${productId}"]`);
-  if (btn) { btn.disabled = true; btn.textContent = "Redirigiendo…"; }
-  try {
-    // Formato que espera el backend
-    const body = { items: [{ product_id: Number(productId), qty: 1 }] };
-    const data = await fetchJSON(`${API}/orders/checkout`, {
-      method: "POST",
-      body: JSON.stringify(body),
+const API = {
+  list: async () => {
+    const r = await fetch('/api/products/published', { headers: { 'accept': 'application/json' }});
+    if (!r.ok) throw new Error('No se pudo listar productos');
+    return r.json();
+  },
+  checkout: async (items) => {
+    const payload = { items }; // formato suelto: [{ title, price, quantity, currency }]
+    const r = await fetch('/api/orders/checkout', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+      body: JSON.stringify(payload)
     });
-    if (data && data.url) window.location.href = data.url;
-    else throw new Error("Respuesta sin URL de pago");
-  } catch (err) {
-    console.error("Checkout error:", err);
-    toast(`No se pudo iniciar el pago: ${err.message}`);
-    if (btn) { btn.disabled = false; btn.textContent = "Comprar ahora (v15)"; }
+    if (!r.ok) {
+      const txt = await r.text().catch(()=> '');
+      throw new Error(`Checkout falló (${r.status}): ${txt || 'respuesta no válida'}`);
+    }
+    return r.json();
   }
+};
+
+function cardHTML(p) {
+  const img = p.image_url || 'https://picsum.photos/seed/kaistore/800/600';
+  const title = p.marketing_title || p.title || 'Producto';
+  const price = Number(p.price || 0);
+  const currency = p.currency || 'CLP';
+  return `
+    <article class="card">
+      <img src="${img}" alt="${title}">
+      <div class="bx">
+        <h3 style="margin:0 0 6px 0">${title}</h3>
+        <p class="muted" style="margin:0 0 10px 0">${title}</p>
+        <div style="font-weight:700;margin-bottom:10px">$${price.toLocaleString('es-CL')}</div>
+        <button class="btn buy"
+          data-title="${title.replace(/"/g,'&quot;')}"
+          data-price="${price}"
+          data-currency="${currency}">Comprar ahora (v16)</button>
+      </div>
+    </article>
+  `;
 }
 
-function toast(text) {
-  const t = document.createElement("div");
-  t.className = "toast";
-  t.textContent = text;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3500);
-}
-
-async function loadProducts() {
-  const grid = document.getElementById("product-grid");
-  grid.innerHTML = '<div class="loading">Cargando…</div>';
+async function mount() {
   try {
-    const products = await fetchJSON(`${API}/products/published`);
-    grid.innerHTML = "";
-    if (!products?.length) {
-      grid.innerHTML = `<p class="empty">No hay productos publicados todavía 👋</p>`;
+    const data = await API.list();
+    const grid = $('#products');
+    if (!data || data.length === 0) {
+      $('#empty').style.display = 'block';
       return;
     }
-    products.forEach(p => grid.appendChild(productCard(p)));
+    grid.innerHTML = data.map(cardHTML).join('');
+
+    // Buscar
+    $('#q').addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase();
+      $$('.card').forEach(c => {
+        const t = $('.bx h3', c).textContent.toLowerCase();
+        c.style.display = t.includes(q) ? '' : 'none';
+      });
+    });
+
+    // Delegación de eventos para comprar
+    grid.addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('.buy');
+      if (!btn) return;
+
+      btn.disabled = true; btn.textContent = 'Creando pago…';
+      try {
+        // Usamos el formato “datos sueltos” que tu API acepta:
+        const item = {
+          title: btn.dataset.title,
+          price: Number(btn.dataset.price),
+          quantity: 1,
+          currency: btn.dataset.currency || 'CLP'
+        };
+        const res = await API.checkout([item]);
+        if (res && res.url) {
+          location.href = res.url; // redirige a Stripe
+        } else {
+          throw new Error('La API no devolvió URL de pago');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('No se pudo iniciar el pago: ' + err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Comprar ahora (v16)';
+      }
+    });
+
   } catch (e) {
     console.error(e);
-    grid.innerHTML = `<p class="error">No se pudieron cargar los productos</p>`;
+    alert('Error cargando tienda: ' + e.message);
   }
 }
 
-window.addEventListener("DOMContentLoaded", loadProducts);
+document.addEventListener('DOMContentLoaded', mount);
