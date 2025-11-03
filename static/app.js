@@ -29,7 +29,7 @@ function cardHTML(p) {
   const img = p.image_url || 'https://picsum.photos/seed/kaistore/800/600';
   const title = p.marketing_title || p.title || 'Producto';
   const price = Number(p.price || 0);
-  const currency = p.currency || 'CLP';
+  const currency = p.currency || 'clp';
   return `
     <article class="card">
       <img src="${img}" alt="${title}">
