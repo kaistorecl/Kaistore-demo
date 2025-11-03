@@ -12,31 +12,28 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
 WEB_URL = os.getenv("WEB_URL", "http://localhost:8000").rstrip("/")
 DEFAULT_CURRENCY = os.getenv("CURRENCY", "clp").lower()
 
-if not STRIPE_SECRET_KEY:
-    # No lanzamos error al importar para no romper startup; validamos en runtime
-    pass
-else:
+if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
+# Monedas sin decimales (no multiplicar por 100)
+ZERO_DECIMAL = {
+    "bif","clp","djf","gnf","jpy","kmf","krw","mga","pyg","rwf","vnd","vuv","xaf","xof","xpf"
+}
 
-# --- Modelos ---
 class CheckoutItem(BaseModel):
     title: str = Field(..., description="Nombre del producto")
-    price: int = Field(..., ge=0, description="Precio en CLP, sin puntos")
+    price: int = Field(..., ge=0, description="Precio en moneda entera (CLP)")
     quantity: int = Field(1, ge=1)
-    currency: Optional[str] = Field(None, description="Código de moneda (ej. clp)")
+    currency: Optional[str] = Field(None, description="Código de moneda (clp, usd, etc.)")
     image_url: Optional[str] = None
 
     @validator("currency", pre=True, always=True)
     def _currency_lower_or_default(cls, v):
         return (v or DEFAULT_CURRENCY).lower()
 
-
 class CheckoutRequest(BaseModel):
     items: List[CheckoutItem]
 
-
-# --- Endpoints ---
 @router.post("/checkout")
 def create_checkout_session(body: CheckoutRequest):
     if not STRIPE_SECRET_KEY:
@@ -47,22 +44,23 @@ def create_checkout_session(body: CheckoutRequest):
 
     line_items = []
     for it in body.items:
-        # Stripe espera centavos: CLP no tiene decimales, pero igual multiplicamos por 100 (recomendado)
-        unit_amount = int(it.price) * 100
+        # Para monedas zero-decimal (p.ej., CLP) NO multiplicamos por 100
+        unit_amount = int(it.price)
+        if it.currency not in ZERO_DECIMAL:
+            unit_amount = unit_amount * 100
+
         product_data = {"name": it.title}
         if it.image_url:
             product_data["images"] = [it.image_url]
 
-        line_items.append(
-            {
-                "price_data": {
-                    "currency": it.currency,           # <--- ya en minúsculas
-                    "product_data": product_data,
-                    "unit_amount": unit_amount,
-                },
-                "quantity": it.quantity,
-            }
-        )
+        line_items.append({
+            "price_data": {
+                "currency": it.currency,
+                "product_data": product_data,
+                "unit_amount": unit_amount,
+            },
+            "quantity": it.quantity,
+        })
 
     try:
         session = stripe.checkout.Session.create(
@@ -73,11 +71,11 @@ def create_checkout_session(body: CheckoutRequest):
         )
         return {"id": session.id, "url": session.url}
     except stripe.error.StripeError as e:
-        # Exponemos un mensaje controlado
-        raise HTTPException(status_code=400, detail=f"Stripe error: {getattr(e, 'user_message', str(e))}")
+        # Mensaje claro hacia el front
+        user_msg = getattr(e, "user_message", None) or getattr(e, "code", None) or str(e)
+        raise HTTPException(status_code=400, detail=f"Stripe error: {user_msg}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creando checkout: {str(e)}")
-
 
 @router.get("/{session_id}")
 def get_order(session_id: str):
@@ -93,4 +91,5 @@ def get_order(session_id: str):
             "currency": session.get("currency"),
         }
     except stripe.error.StripeError as e:
-        raise HTTPException(status_code=400, detail=f"Stripe error: {getattr(e, 'user_message', str(e))}")
+        user_msg = getattr(e, "user_message", None) or getattr(e, "code", None) or str(e)
+        raise HTTPException(status_code=400, detail=f"Stripe error: {user_msg}")
