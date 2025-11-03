@@ -1,50 +1,52 @@
-<!-- templates/tienda.html -->
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kaistore • Demo</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <meta name="theme-color" content="#0f62fe" />
+  <link rel="icon" href="data:,">
   <style>
-    /* estilos mínimos por si tu style.css no cubre algo */
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin:0; background:#fafafa; color:#111 }
-    header { display:flex; gap:12px; align-items:center; padding:14px 16px; background:#fff; position:sticky; top:0; z-index:10; border-bottom:1px solid #eee }
-    .brand { font-weight:700; color:#1d4ed8 }
-    .subtle { color:#6b7280; font-weight:500 }
-    .search { margin-left:auto }
-    .search input { border:1px solid #e5e7eb; border-radius:999px; padding:10px 14px; outline:none; width:220px; }
-    main { max-width:1024px; margin:20px auto; padding:0 16px }
-    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:18px }
-    .grid-empty { text-align:center; color:#6b7280; padding:40px 8px }
-    .card { border:1px solid #e5e7eb; border-radius:14px; overflow:hidden; background:#fff; display:flex; flex-direction:column }
-    .card-img { width:100%; aspect-ratio:16/9; object-fit:cover }
-    .card-body { padding:14px }
-    .card-title { margin:0 0 6px; font-size:16px }
-    .card-desc { margin:0 0 10px; color:#6b7280; font-size:13px; min-height:18px }
-    .card-price { font-weight:700; margin-bottom:10px }
-    .btn-primary { background:#155eef; color:#fff; border:none; border-radius:10px; padding:10px 12px; width:100%; cursor:pointer }
-    .btn-primary:disabled { opacity:.6; cursor:not-allowed }
-    footer { text-align:center; color:#9ca3af; padding:32px 0 }
+    :root { --blue:#0f62fe; --bg:#f6f7fb; --txt:#0f172a; --sub:#475569; --card:#fff; }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto}
+    header{display:flex;gap:.75rem;align-items:center;justify-content:space-between;padding:14px 16px;background:#fff;position:sticky;top:0;z-index:10;border-bottom:1px solid #e9eef5}
+    .brand{display:flex;align-items:center;gap:.5rem;font-weight:700}
+    .dot{width:8px;height:8px;border-radius:99px;background:#22c55e}
+    .muted{color:var(--sub);font-weight:600}
+    .search{flex:1;max-width:340px}
+    .search input{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fff}
+    main{padding:18px 12px 64px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;max-width:1100px;margin:0 auto}
+    .card{background:var(--card);border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(2,6,23,.06)}
+    .card img{width:100%;height:210px;object-fit:cover;background:#e5e7eb}
+    .pad{padding:12px 14px}
+    .title{font-weight:800;margin:2px 0 6px}
+    .desc{color:var(--sub);font-size:.95rem;margin:0 0 6px}
+    .price{font-weight:800;margin:2px 0 10px}
+    .btn{display:inline-flex;align-items:center;justify-content:center;width:100%;padding:12px;border:none;border-radius:10px;background:var(--blue);color:#fff;font-weight:700}
+    .btn:active{transform:translateY(1px)}
+    .center{max-width:1100px;margin:42px auto;text-align:center;color:var(--sub)}
+    footer{padding:40px 0;color:var(--sub);text-align:center;font-size:.95rem}
+    .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 14px;border-radius:10px;font-weight:600;opacity:0;transition:.3s}
+    .toast.show{opacity:1}
   </style>
 </head>
 <body>
   <header>
-    <div class="brand">Kaistore</div>
-    <div class="subtle">• Demo</div>
-    <div class="search">
-      <input placeholder="Buscar productos…" aria-label="Buscar productos">
+    <div class="brand">
+      <span class="dot"></span><span>Kaistore</span><span class="muted">• Demo</span>
     </div>
+    <div class="search"><input id="q" placeholder="Buscar productos…" /></div>
   </header>
 
   <main>
-    <div id="products" class="grid">
-      <!-- acá se renderizan las cards -->
-    </div>
+    <div id="grid" class="grid" aria-live="polite"></div>
+    <div id="empty" class="center" style="display:none">No hay productos publicados todavía 👋</div>
   </main>
 
   <footer>Sandbox • Pagos de prueba en Stripe</footer>
 
-  <script defer src="/static/app.js"></script>
+  <div id="toast" class="toast">Mensaje</div>
+  <script src="/static/app.js?v=2025-11-02"></script>
 </body>
 </html>
